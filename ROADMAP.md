@@ -77,40 +77,52 @@ Configurable areas the bot specializes in for each user:
 
 ---
 
-### 🧠 AI Upgrades
+### 🧠 AI Configuration (Research Complete ✅)
 
-**Available Credits:** $2,500.95 OpenAI credits 🎉  
+**Available Credits:** $2,500.95 → **194 years of personal use!**  
 **Account Tier:** Usage Tier 3  
-**Note:** $10/month budget limit set (can increase anytime)
+**Research:** See `research/MODEL_RESEARCH_FINDINGS.md`
 
-#### Available Models (Tier 3)
+#### ✅ Chosen Model Stack
+
+| Purpose | Model | Why |
+|---------|-------|-----|
+| **Chat** | `gpt-4o-mini` | 117 EQ (89th percentile), 4.19/5 therapy rating, $0.02/100 chats |
+| **Voice Input** | `whisper-1` | Fastest (857ms), most reliable |
+| **Voice Output** | `tts-1` | Natural, human-like, $0.015/min |
+
+#### ❌ Models to Avoid
+
+| Model | Why Avoid |
+|-------|-----------|
+| GPT-5, GPT-5.2 | 52% more restrictive, will deflect to "see a professional" |
+| o3, o4-mini | 30-120s response times, wrong purpose (reasoning, not empathy) |
+| GPT-4o | 16x more expensive than mini, minimal benefit |
+
+#### Configuration
+
+```python
+model = "gpt-4o-mini"
+temperature = 0.8          # Warm, empathetic responses
+presence_penalty = 0.6     # Reduces repetition
+frequency_penalty = 0.3    # Encourages variety
+max_tokens = 600
 ```
-Chat: gpt-5.2, gpt-5.2-pro, gpt-5-mini, gpt-4o, gpt-4o-mini, gpt-3.5-turbo
-Voice: whisper-1, tts-1-hd, gpt-4o-mini-tts
-Image: dall-e-3
-Reasoning: o3, o4-mini
-```
 
-#### Model Strategy
+#### 3-Layer Guardrail Strategy
 
-| User Tier | Model | Purpose |
-|-----------|-------|---------|
-| Free users | `gpt-3.5-turbo` | Basic support (current) |
-| Standard | `gpt-4o-mini` | Better emotional intelligence |
-| **Personal Mode** | `gpt-5-mini` or `gpt-5` | Your private AI therapist |
+1. **System Prompt** - Anti-deflection language, direct advice persona
+2. **Keyword Detection** - Separate crisis detection (current implementation)
+3. **Response Filtering** - Regenerate if "As an AI..." detected
 
-#### Planned Upgrades
+#### Cost Projections
 
-| Feature | Model | Priority |
-|---------|-------|----------|
-| **Better Chat** | `gpt-4o` → `gpt-5-mini` | High |
-| **Voice Input** | `whisper-1` | Medium |
-| **Voice Responses** | `tts-1-hd` | Medium |
-| **Extended Memory** | 50+ messages (vs 10) | Medium |
+| Usage | Monthly Cost |
+|-------|--------------|
+| Personal (100 convos + 50 min voice) | **$1.07** |
+| 100 subscribers | $190-216 |
 
-**Cost Estimates:**
-- GPT-5-mini: ~$0.01-0.03 per chat
-- With $2,500 credits = 80,000+ conversations (years of use!)
+**Key Insight:** GPT-5 family was trained to reduce "emotional reliance" by 42% - it's designed to deflect, which is the OPPOSITE of what we want for Personal Mode.
 
 ---
 
