@@ -79,18 +79,38 @@ Configurable areas the bot specializes in for each user:
 
 ### 🧠 AI Upgrades
 
-**Available Credits:** $2,500.95 OpenAI credits 🎉
+**Available Credits:** $2,500.95 OpenAI credits 🎉  
+**Account Tier:** Usage Tier 3  
+**Note:** $10/month budget limit set (can increase anytime)
 
-| Upgrade | Benefit | Priority |
-|---------|---------|----------|
-| **GPT-4o** | Superior emotional intelligence, better advice | High |
-| **Whisper API** | Transcribe voice messages to text | Medium |
-| **Extended Memory** | 50+ messages history (vs current 10) | Medium |
-| **Text-to-Speech** | Bot can respond with voice messages | Low |
+#### Available Models (Tier 3)
+```
+Chat: gpt-5.2, gpt-5.2-pro, gpt-5-mini, gpt-4o, gpt-4o-mini, gpt-3.5-turbo
+Voice: whisper-1, tts-1-hd, gpt-4o-mini-tts
+Image: dall-e-3
+Reasoning: o3, o4-mini
+```
 
-**Cost Estimates with GPT-4o:**
-- ~$0.02 per conversation
-- $2,500 = ~125,000 conversations (years of use!)
+#### Model Strategy
+
+| User Tier | Model | Purpose |
+|-----------|-------|---------|
+| Free users | `gpt-3.5-turbo` | Basic support (current) |
+| Standard | `gpt-4o-mini` | Better emotional intelligence |
+| **Personal Mode** | `gpt-5-mini` or `gpt-5` | Your private AI therapist |
+
+#### Planned Upgrades
+
+| Feature | Model | Priority |
+|---------|-------|----------|
+| **Better Chat** | `gpt-4o` → `gpt-5-mini` | High |
+| **Voice Input** | `whisper-1` | Medium |
+| **Voice Responses** | `tts-1-hd` | Medium |
+| **Extended Memory** | 50+ messages (vs 10) | Medium |
+
+**Cost Estimates:**
+- GPT-5-mini: ~$0.01-0.03 per chat
+- With $2,500 credits = 80,000+ conversations (years of use!)
 
 ---
 
