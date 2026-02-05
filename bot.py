@@ -208,13 +208,25 @@ async def run_telegram_bot():
     application.add_error_handler(error_handler)
     
     logger.info("Starting Telegram bot polling...")
-    bot_running = True
     
+    # Initialize and start polling manually to avoid signal handler issues
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+    
+    logger.info("Bot polling started successfully!")
+    
+    # Keep the bot running
     try:
-        await application.run_polling(allowed_updates=Update.ALL_TYPES)
-    except Exception as e:
-        logger.error(f"Bot polling error: {e}")
-        bot_running = False
+        while True:
+            await asyncio.sleep(1)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        logger.info("Stopping bot...")
+        await application.updater.stop()
+        await application.stop()
+        await application.shutdown()
 
 def run_flask_app():
     """Run Flask app in a separate thread."""
