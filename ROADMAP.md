@@ -18,14 +18,16 @@ Available on **Telegram and WhatsApp**, with a **Premium Personal Mode** that ac
 
 | Feature | Details | Priority |
 |---------|---------|----------|
-| **WhatsApp Integration** | Meta Cloud API (1,000 free convos/month) | High |
+| **WhatsApp Integration** | Twilio WhatsApp API | High |
 | **Shared Conversation History** | Same history across Telegram & WhatsApp | High |
 | **Platform Toggle** | User option to keep histories separate | Medium |
 
 **Implementation Notes:**
-- Use Meta Business Cloud API (free tier sufficient for personal use)
+- **Provider:** Twilio WhatsApp API ($11.53 credits available)
+- **Cost:** ~$0.01-0.02 per message exchange (~500-1,000 messages with credits)
 - Same backend, different message handlers
-- User links accounts via verification code
+- User links accounts via phone number verification
+- Webhook receives WhatsApp messages → same AI logic → respond via Twilio
 
 ---
 
