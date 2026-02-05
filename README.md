@@ -2,6 +2,8 @@
 
 A compassionate Telegram chatbot that provides mental wellness support using OpenAI's GPT.
 
+🤖 **Try it:** [@mywellnesscompanion_bot](https://t.me/mywellnesscompanion_bot)
+
 ## Features
 
 - Empathetic conversational support
@@ -10,7 +12,30 @@ A compassionate Telegram chatbot that provides mental wellness support using Ope
 - Crisis keyword detection with South African helpline resources
 - Conversation history tracking (last 10 messages)
 
-## Setup
+## Deployment
+
+This bot is deployed on **Render** (Free Tier):
+- **URL:** https://mindmate-uidn.onrender.com
+- **Auto-deploys** on push to main branch
+
+### Deploy Your Own (Render - Free)
+
+1. Fork this repository
+2. Go to [render.com](https://render.com) and sign in
+3. Create a **New Web Service**
+4. Connect your GitHub repo
+5. Configure:
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `python bot.py`
+   - **Instance Type:** Free
+6. Add Environment Variables:
+   - `TELEGRAM_BOT_TOKEN` - from [@BotFather](https://t.me/botfather)
+   - `OPENAI_API_KEY` - from [OpenAI](https://platform.openai.com/api-keys)
+7. Deploy!
+
+> **Note:** Free tier spins down after inactivity (~50s cold start delay). Use [UptimeRobot](https://uptimerobot.com) to ping your URL every 14 minutes to keep it awake.
+
+## Local Development
 
 1. Clone this repository
 
@@ -19,19 +44,16 @@ A compassionate Telegram chatbot that provides mental wellness support using Ope
    pip install -r requirements.txt
    ```
 
-3. Create a `.env` file in the project root:
+3. Create a `.env` file:
    ```bash
    cp .env.example .env
    ```
 
-4. Edit the `.env` file with your credentials:
+4. Add your credentials to `.env`:
    ```
-   TELEGRAM_BOT_TOKEN=8518887693:AAGghCm4UzNQhhxqSQHi-q-wYKPK4SZ_k88
-   OPENAI_API_KEY=your_openai_key_here
+   TELEGRAM_BOT_TOKEN=your_telegram_token
+   OPENAI_API_KEY=your_openai_key
    ```
-
-   - `TELEGRAM_BOT_TOKEN`: The token provided above, or get your own from [@BotFather](https://t.me/botfather) on Telegram
-   - `OPENAI_API_KEY`: Get from [OpenAI Platform](https://platform.openai.com/api-keys)
 
 5. Run the bot:
    ```bash
@@ -42,27 +64,35 @@ A compassionate Telegram chatbot that provides mental wellness support using Ope
 
 **IMPORTANT: Keep your credentials secure!**
 
-- **Never commit your `.env` file to version control.** The `.env` file contains sensitive tokens that should remain private.
-- **Never share your bot token publicly.** If your Telegram bot token is compromised, anyone can control your bot. If you suspect your token has been exposed, immediately revoke it via [@BotFather](https://t.me/botfather) and generate a new one.
-- **Never share your OpenAI API key.** A compromised API key can result in unauthorized usage and charges to your account.
-- The `.env.example` file contains only placeholder values and is safe to commit.
+- **Never commit your `.env` file to version control.**
+- **Never share your bot token publicly.** If compromised, revoke it via [@BotFather](https://t.me/botfather).
+- **Never share your OpenAI API key.** A compromised key can result in unauthorized charges.
 
 ## Usage
 
-- `/start` - Start a conversation with the bot (clears history)
-- `/clear` - Clear conversation history
-- `/help` - Show available commands
-- Send any message to chat with the wellness assistant
+| Command | Description |
+|---------|-------------|
+| `/start` | Start a conversation (clears history) |
+| `/clear` | Clear conversation history |
+| `/help` | Show available commands |
+
+Send any message to chat with MindMate!
 
 ## Crisis Support
 
 The bot automatically detects crisis-related keywords and provides immediate access to South African mental health resources:
 
-- SADAG: 0800 567 567
-- Lifeline South Africa: 0861 322 322
-- Suicide Crisis Line: 0800 567 567
-- LifeLine WhatsApp: 0600 123 456
+| Resource | Contact |
+|----------|---------|
+| SADAG | 0800 567 567 |
+| Lifeline South Africa | 0861 322 322 |
+| Suicide Crisis Line | 0800 567 567 |
+| LifeLine WhatsApp | 0600 123 456 |
 
 ## Disclaimer
 
 This bot is not a replacement for professional mental health support. It is an AI companion for emotional reflection and basic wellness support. If you're experiencing a mental health crisis, please contact a mental health professional or crisis helpline immediately.
+
+## License
+
+MIT
