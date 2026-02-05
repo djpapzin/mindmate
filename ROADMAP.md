@@ -6,9 +6,74 @@ This document outlines the vision, planned features, and development priorities 
 
 ## 🎯 Vision
 
-**MindMate aims to be the most accessible, empathetic, and effective AI-powered mental wellness companion for South Africans.**
+**MindMate aims to be a comprehensive AI-powered mental wellness companion that provides 24/7 personalized support.**
 
-Our goal is to provide 24/7 support that bridges the gap between feeling overwhelmed and accessing professional help - while always encouraging users to seek professional support when needed.
+Available on **Telegram and WhatsApp**, with a **Premium Personal Mode** that acts as your dedicated AI therapist - no generic disclaimers, no deflecting to helplines, just real support.
+
+---
+
+## 🔥 Priority Features (Brainstorm)
+
+### 📱 Multi-Platform Support
+
+| Feature | Details | Priority |
+|---------|---------|----------|
+| **WhatsApp Integration** | Twilio WhatsApp API | High |
+| **Shared Conversation History** | Same history across Telegram & WhatsApp | High |
+| **Platform Toggle** | User option to keep histories separate | Medium |
+
+**Implementation Notes:**
+- **Provider:** Twilio WhatsApp API ($11.53 credits available)
+- **Cost:** ~$0.01-0.02 per message exchange (~500-1,000 messages with credits)
+- Same backend, different message handlers
+- User links accounts via phone number verification
+- Webhook receives WhatsApp messages → same AI logic → respond via Twilio
+
+---
+
+### 🔓 Personal/Premium Mode
+
+A private, unfiltered AI therapist experience. No corporate guardrails.
+
+| Feature | Description |
+|---------|-------------|
+| **No AI Disclaimers** | Removes "As an AI..." and robotic responses |
+| **No Helpline Redirects** | Direct support instead of deflecting to hotlines |
+| **Direct Personalized Advice** | Therapist-style guidance, not generic tips |
+| **Focus Areas Config** | User sets their specific challenges |
+| **Memory Across Sessions** | Remembers your history, patterns, progress |
+| **Private by Default** | Locked to specific user IDs |
+
+**Business Model:**
+- Free tier: Standard MindMate (with guardrails)
+- Premium tier: Personal Mode (subscription - future)
+
+---
+
+### 🎯 Personalization (Focus Areas)
+
+Configurable areas the bot specializes in for each user:
+
+| Area | What It Covers |
+|------|----------------|
+| 💑 **Relationships** | Dating, communication, boundaries, breakups, family |
+| 💰 **Finances** | Money stress, budgeting anxiety, financial goals |
+| 🧠 **Bipolar Management** | Mood tracking, episode awareness, stability strategies |
+| 😰 **Anxiety** | Panic attacks, social anxiety, worry management |
+| 😔 **Depression** | Low mood, motivation, daily functioning |
+| 💼 **Work/Career** | Burnout, work-life balance, career transitions |
+
+---
+
+### 💡 Engagement Features
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| **🎤 Voice Messages** | Send voice notes → bot responds (text or audio) | Medium |
+| **📅 Daily Check-ins** | Bot messages YOU first: "How are you feeling today?" | High |
+| **📊 Session Summaries** | Weekly recap of your mental health journey | Medium |
+| **📈 Mood Trends** | "You've been feeling better this week vs last" | High |
+| **💾 Export History** | Download conversations as a personal journal | Low |
 
 ---
 
@@ -23,15 +88,16 @@ Our goal is to provide 24/7 support that bridges the gap between feeling overwhe
 - [x] Deployed on Render (free tier)
 - [x] UptimeRobot monitoring for 24/7 availability
 - [x] Automated test suite
+- [x] Clean, documented codebase
 
 ### ⚠️ Current Limitations
 | Limitation | Impact | Planned Fix |
 |------------|--------|-------------|
-| In-memory storage | History lost on redeploy | Phase 1: Add database |
-| No user profiles | Can't remember names/preferences | Phase 1: User profiles |
-| English only | Excludes non-English speakers | Phase 4: Multi-language |
-| Text only | Can't process voice messages | Phase 4: Voice support |
-| No analytics | Can't measure impact | Phase 1: Analytics |
+| In-memory storage | History lost on redeploy | Database integration |
+| Telegram only | Can't use on WhatsApp | Multi-platform support |
+| No user profiles | Can't remember preferences | Personal Mode |
+| Text only | Can't process voice messages | Voice support |
+| Generic responses | Same for all users | Personalization |
 
 ---
 
