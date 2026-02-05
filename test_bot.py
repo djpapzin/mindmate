@@ -6,12 +6,12 @@ Run: python test_bot.py
 
 import sys
 
-# Import bot functions
+# Import bot functions (with aliases for new function names)
 from bot import (
-    detect_crisis_keywords,
-    get_conversation_history,
+    detect_crisis as detect_crisis_keywords,
+    get_history as get_conversation_history,
     add_to_history,
-    clear_conversation_history,
+    clear_history as clear_conversation_history,
     conversation_history,
     CRISIS_KEYWORDS,
     MAX_HISTORY_LENGTH
