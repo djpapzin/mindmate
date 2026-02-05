@@ -1,98 +1,213 @@
-# MindMate - Telegram Wellness Bot
+# 🧠 MindMate - AI Mental Wellness Companion
 
-A compassionate Telegram chatbot that provides mental wellness support using OpenAI's GPT.
+<p align="center">
+  <strong>A compassionate Telegram chatbot providing 24/7 mental wellness support powered by OpenAI</strong>
+</p>
 
-🤖 **Try it:** [@mywellnesscompanion_bot](https://t.me/mywellnesscompanion_bot)
+<p align="center">
+  <a href="https://t.me/mywellnesscompanion_bot">🤖 Try MindMate</a> •
+  <a href="#features">Features</a> •
+  <a href="#roadmap">Roadmap</a> •
+  <a href="#deployment">Deploy</a>
+</p>
 
-## Features
+---
 
-- Empathetic conversational support
-- Healthy coping strategy suggestions
-- 24/7 availability for users to express their feelings
-- Crisis keyword detection with South African helpline resources
-- Conversation history tracking (last 10 messages)
+## ✨ Features
 
-## Deployment
+### Current (v1.0)
+| Feature | Description |
+|---------|-------------|
+| 💬 **Empathetic Chat** | AI-powered conversations with emotional intelligence |
+| 🚨 **Crisis Detection** | Automatic detection of crisis keywords with immediate helpline resources |
+| 🇿🇦 **SA Resources** | South African mental health helplines (SADAG, Lifeline, etc.) |
+| 📝 **Context Memory** | Remembers last 10 messages per user for coherent conversations |
+| 👥 **User Isolation** | Private conversations - users can't see each other's chats |
+| 🔒 **Privacy First** | No data stored permanently, conversations reset on deploy |
 
-This bot is deployed on **Render** (Free Tier):
-- **URL:** https://mindmate-uidn.onrender.com
-- **Auto-deploys** on push to main branch
-
-### Deploy Your Own (Render - Free)
-
-1. Fork this repository
-2. Go to [render.com](https://render.com) and sign in
-3. Create a **New Web Service**
-4. Connect your GitHub repo
-5. Configure:
-   - **Build Command:** `pip install -r requirements.txt`
-   - **Start Command:** `python bot.py`
-   - **Instance Type:** Free
-6. Add Environment Variables:
-   - `TELEGRAM_BOT_TOKEN` - from [@BotFather](https://t.me/botfather)
-   - `OPENAI_API_KEY` - from [OpenAI](https://platform.openai.com/api-keys)
-7. Deploy!
-
-> **Note:** Free tier spins down after inactivity (~50s cold start delay). Use [UptimeRobot](https://uptimerobot.com) to ping your URL every 14 minutes to keep it awake.
-
-## Local Development
-
-1. Clone this repository
-
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Create a `.env` file:
-   ```bash
-   cp .env.example .env
-   ```
-
-4. Add your credentials to `.env`:
-   ```
-   TELEGRAM_BOT_TOKEN=your_telegram_token
-   OPENAI_API_KEY=your_openai_key
-   ```
-
-5. Run the bot:
-   ```bash
-   python bot.py
-   ```
-
-## ⚠️ Security Warning
-
-**IMPORTANT: Keep your credentials secure!**
-
-- **Never commit your `.env` file to version control.**
-- **Never share your bot token publicly.** If compromised, revoke it via [@BotFather](https://t.me/botfather).
-- **Never share your OpenAI API key.** A compromised key can result in unauthorized charges.
-
-## Usage
-
+### Commands
 | Command | Description |
 |---------|-------------|
 | `/start` | Start a conversation (clears history) |
 | `/clear` | Clear conversation history |
 | `/help` | Show available commands |
 
-Send any message to chat with MindMate!
+---
 
-## Crisis Support
+## 🗺️ Roadmap
 
-The bot automatically detects crisis-related keywords and provides immediate access to South African mental health resources:
+### 🎯 Phase 1: Foundation (v1.1) - *In Progress*
+- [ ] Persistent database (PostgreSQL/Redis)
+- [ ] User profiles (name, preferences)
+- [ ] Rate limiting & abuse prevention
+- [ ] Improved error handling
+- [ ] Usage analytics dashboard
 
-| Resource | Contact |
-|----------|---------|
-| SADAG | 0800 567 567 |
-| Lifeline South Africa | 0861 322 322 |
-| Suicide Crisis Line | 0800 567 567 |
-| LifeLine WhatsApp | 0600 123 456 |
+### 🌱 Phase 2: Wellness Tools (v2.0)
+- [ ] `/mood` - Daily mood tracking with insights
+- [ ] `/breathe` - Guided breathing exercises (4-7-8, box breathing)
+- [ ] `/journal` - Prompted journaling for reflection
+- [ ] `/gratitude` - Daily gratitude practice
+- [ ] Daily check-in reminders (opt-in)
+- [ ] Mood history & trends visualization
 
-## Disclaimer
+### 🎨 Phase 3: Personalization (v2.5)
+- [ ] Remember user's name permanently
+- [ ] Personalized coping strategies based on history
+- [ ] Custom conversation styles (casual, professional, gentle)
+- [ ] Track recurring concerns & provide tailored resources
+- [ ] Progress insights ("You've been feeling better this week!")
 
-This bot is not a replacement for professional mental health support. It is an AI companion for emotional reflection and basic wellness support. If you're experiencing a mental health crisis, please contact a mental health professional or crisis helpline immediately.
+### 🚀 Phase 4: Advanced Features (v3.0)
+- [ ] 🎤 Voice message support
+- [ ] 🌍 Multi-language support (Zulu, Afrikaans, Xhosa)
+- [ ] 🧘 Meditation timer with ambient sounds
+- [ ] 📅 Calendar integration for self-care reminders
+- [ ] 🆘 Emergency contact notification (with consent)
+- [ ] 📊 Weekly wellness reports
 
-## License
+### 💎 Phase 5: Scale (v4.0)
+- [ ] Premium features tier
+- [ ] Therapist directory integration
+- [ ] Corporate wellness program support
+- [ ] API for third-party integrations
+- [ ] White-label solution
 
-MIT
+---
+
+## 🛠️ Technical Roadmap
+
+| Improvement | Status | Priority |
+|-------------|--------|----------|
+| Webhook mode (vs polling) | 🔜 Planned | High |
+| Docker containerization | 🔜 Planned | Medium |
+| CI/CD with GitHub Actions | 🔜 Planned | Medium |
+| Structured logging (Sentry) | 🔜 Planned | Medium |
+| Test coverage > 80% | ✅ Started | High |
+
+---
+
+## 🚀 Deployment
+
+**Live Instance:** https://mindmate-uidn.onrender.com
+
+### Deploy Your Own (Free)
+
+#### Option 1: Render (Recommended)
+1. Fork this repository
+2. Go to [render.com](https://render.com) → New Web Service
+3. Connect your GitHub repo
+4. Configure:
+   ```
+   Build Command: pip install -r requirements.txt
+   Start Command: python bot.py
+   Instance Type: Free
+   ```
+5. Add Environment Variables:
+   - `TELEGRAM_BOT_TOKEN` - from [@BotFather](https://t.me/botfather)
+   - `OPENAI_API_KEY` - from [OpenAI](https://platform.openai.com/api-keys)
+6. Deploy!
+
+> 💡 **Tip:** Use [UptimeRobot](https://uptimerobot.com) to ping your URL every 5 minutes to prevent cold starts.
+
+#### Option 2: Railway
+1. Fork this repo
+2. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub
+3. Add environment variables
+4. Deploy!
+
+---
+
+## 💻 Local Development
+
+```bash
+# Clone the repository
+git clone https://github.com/djpapzin/mindmate.git
+cd mindmate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Setup environment
+cp .env.example .env
+# Edit .env with your tokens
+
+# Run the bot
+python bot.py
+
+# Run tests
+python test_bot.py
+```
+
+---
+
+## 🧪 Testing
+
+```bash
+python test_bot.py
+```
+
+**Test Coverage:**
+- ✅ Crisis keyword detection
+- ✅ Conversation history management
+- ✅ User isolation
+- ✅ Message format validation
+- ✅ History limit enforcement
+
+---
+
+## 🆘 Crisis Support
+
+MindMate automatically detects crisis-related messages and provides immediate access to help:
+
+| Resource | Contact | Available |
+|----------|---------|-----------|
+| **SADAG** | 0800 567 567 | 24/7 |
+| **Lifeline SA** | 0861 322 322 | 24/7 |
+| **Suicide Crisis Line** | 0800 567 567 | 24/7 |
+| **LifeLine WhatsApp** | 0600 123 456 | 24/7 |
+
+**Crisis keywords detected:** suicide, self-harm, kill myself, end my life, want to die, no reason to live, and more.
+
+---
+
+## ⚠️ Important Disclaimers
+
+> **MindMate is NOT a replacement for professional mental health support.**
+
+- This is an AI companion for emotional reflection and basic wellness support
+- If you're experiencing a mental health crisis, please contact a professional or crisis helpline
+- The bot does not provide medical advice, diagnosis, or treatment
+- Conversations are not monitored by mental health professionals
+
+---
+
+## 🔒 Security
+
+- Never commit `.env` files to version control
+- Rotate tokens immediately if compromised
+- Bot token: Revoke via [@BotFather](https://t.me/botfather)
+- OpenAI key: Rotate at [platform.openai.com](https://platform.openai.com/api-keys)
+
+---
+
+## 🤝 Contributing
+
+Contributions welcome! Please:
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+<p align="center">
+  Made with 💚 for mental wellness in South Africa
+</p>
