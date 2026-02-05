@@ -1,5 +1,7 @@
 import logging
 import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from dotenv import load_dotenv
 from openai import OpenAI, OpenAIError
@@ -195,6 +197,27 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.error(f"Exception while handling an update: {context.error}")
 
 
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    """Simple HTTP handler for health checks."""
+    
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b'MindMate bot is running!')
+    
+    def log_message(self, format, *args):
+        pass  # Suppress HTTP logs
+
+
+def start_health_server():
+    """Start a simple HTTP server for health checks."""
+    port = int(os.getenv('PORT', 10000))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    logger.info(f"Health check server running on port {port}")
+    server.serve_forever()
+
+
 def main() -> None:
     """Start the bot."""
     # Validate configuration
@@ -205,6 +228,10 @@ def main() -> None:
     if not OPENAI_API_KEY:
         logger.error("OPENAI_API_KEY not found in environment variables")
         raise ValueError("OPENAI_API_KEY is required")
+
+    # Start health check server in background thread
+    health_thread = threading.Thread(target=start_health_server, daemon=True)
+    health_thread.start()
 
     logger.info("Starting MindMate Bot...")
 
