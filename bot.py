@@ -61,6 +61,7 @@ def run_telegram_bot():
         return
     
     try:
+        import asyncio
         from telegram import Update
         from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
         from openai import OpenAI
@@ -92,9 +93,9 @@ def run_telegram_bot():
         application.add_handler(CommandHandler("clear", handle_message))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         
-        # Start polling
+        # Start polling with asyncio
         logger.info("Bot polling started...")
-        application.run_polling()
+        asyncio.run(application.run_polling(allowed_updates=Update.ALL_TYPES))
         
     except Exception as e:
         logger.error(f"Bot error: {e}")
