@@ -1,7 +1,9 @@
 import logging
 import os
+from threading import Thread
 
 from dotenv import load_dotenv
+from flask import Flask
 from openai import OpenAI, OpenAIError
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -22,6 +24,19 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Initialize OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+# Create Flask app for health checks
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    """Health check endpoint for Render"""
+    return {"status": "healthy", "service": "mindmate-bot"}
+
+@app.route('/health')
+def health():
+    """Alternative health endpoint"""
+    return "OK", 200
 
 # In-memory conversation history storage: {user_id: [{"role": "user/assistant", "content": "..."}]}
 conversation_history: dict[int, list[dict[str, str]]] = {}
@@ -195,34 +210,38 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.error(f"Exception while handling an update: {context.error}")
 
 
-def main() -> None:
-    """Start the bot."""
+def run_bot():
+    """Run the Telegram bot in a separate thread"""
     # Validate configuration
     if not TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not found in environment variables")
         raise ValueError("TELEGRAM_BOT_TOKEN is required")
     
-    if not OPENAI_API_KEY:
-        logger.error("OPENAI_API_KEY not found in environment variables")
-        raise ValueError("OPENAI_API_KEY is required")
-
-    logger.info("Starting MindMate Bot...")
-
-    # Build the application
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Register handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
+    # Add handlers
+    application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("clear", clear_command))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
+
     # Register error handler
     application.add_error_handler(error_handler)
 
     # Start the bot with polling
     logger.info("Bot is running with polling...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+def main():
+    """Main function to run both Flask app and Telegram bot"""
+    # Start Telegram bot in background thread
+    bot_thread = Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    
+    # Start Flask app for health checks
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
 
 
 if __name__ == "__main__":
