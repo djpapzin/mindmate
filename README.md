@@ -36,12 +36,12 @@
 
 ## 🗺️ Roadmap
 
-### 🎯 Phase 1: Foundation (v1.1) - *In Progress*
+### 🎯 Phase 1: Foundation (v1.1) - *Next Up*
 - [ ] Persistent database (PostgreSQL/Redis)
 - [ ] User profiles (name, preferences)
 - [ ] Rate limiting & abuse prevention
-- [ ] Improved error handling
 - [ ] Usage analytics dashboard
+- [ ] `/mood` command - mood tracking
 
 ### 🌱 Phase 2: Wellness Tools (v2.0)
 - [ ] `/mood` - Daily mood tracking with insights
@@ -79,11 +79,13 @@
 
 | Improvement | Status | Priority |
 |-------------|--------|----------|
-| Webhook mode (vs polling) | 🔜 Planned | High |
-| Docker containerization | 🔜 Planned | Medium |
+| Webhook mode (vs polling) | 🔜 Planned | Medium |
+| Docker containerization | 🔜 Planned | Low |
 | CI/CD with GitHub Actions | 🔜 Planned | Medium |
-| Structured logging (Sentry) | 🔜 Planned | Medium |
-| Test coverage > 80% | ✅ Started | High |
+| Structured logging (Sentry) | 🔜 Planned | Low |
+| Test coverage > 80% | ✅ Done | High |
+| Clean codebase | ✅ Done | High |
+| Render deployment | ✅ Done | High |
 
 ---
 
