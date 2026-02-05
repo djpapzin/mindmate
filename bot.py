@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from threading import Thread
@@ -211,7 +212,11 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 def run_bot():
-    """Run the Telegram bot in a separate thread"""
+    """Run the Telegram bot in a separate thread with its own event loop"""
+    # Create a new event loop for this thread
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
     # Validate configuration
     if not TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not found in environment variables")
@@ -220,7 +225,7 @@ def run_bot():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     # Add handlers
-    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("clear", clear_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -235,12 +240,24 @@ def run_bot():
 
 def main():
     """Main function to run both Flask app and Telegram bot"""
+    # Validate tokens early
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("TELEGRAM_BOT_TOKEN not found!")
+        raise ValueError("TELEGRAM_BOT_TOKEN is required")
+    if not OPENAI_API_KEY:
+        logger.error("OPENAI_API_KEY not found!")
+        raise ValueError("OPENAI_API_KEY is required")
+    
+    logger.info("Starting MindMate Bot...")
+    
     # Start Telegram bot in background thread
     bot_thread = Thread(target=run_bot, daemon=True)
     bot_thread.start()
+    logger.info("Telegram bot thread started")
     
     # Start Flask app for health checks
     port = int(os.environ.get('PORT', 10000))
+    logger.info(f"Starting health check server on port {port}")
     app.run(host='0.0.0.0', port=port)
 
 
