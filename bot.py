@@ -39,6 +39,20 @@ def health():
     """Alternative health endpoint"""
     return "OK", 200
 
+@app.route('/debug')
+def debug():
+    """Debug endpoint to check bot status"""
+    import threading
+    active_threads = threading.enumerate()
+    thread_count = len(active_threads)
+    
+    return {
+        "threads": thread_count,
+        "active_threads": [t.name for t in active_threads],
+        "bot_thread_alive": any("Thread" in str(t) for t in active_threads),
+        "conversation_history_size": len(conversation_history)
+    }
+
 # In-memory conversation history storage: {user_id: [{"role": "user/assistant", "content": "..."}]}
 conversation_history: dict[int, list[dict[str, str]]] = {}
 MAX_HISTORY_LENGTH = 10  # Store last 10 messages (5 exchanges)
