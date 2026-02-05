@@ -45,17 +45,34 @@ def health():
 
 @app.route('/debug')
 def debug():
-    """Debug endpoint"""
+    """Debug endpoint to check bot status"""
+    import threading
+    active_threads = threading.enumerate()
+    thread_count = len(active_threads)
+    
+    # Check if bot thread is running
+    bot_thread_found = False
+    for thread in active_threads:
+        if 'run_telegram_bot' in str(thread):
+            bot_thread_found = True
+            break
+    
     return {
-        "message": "Debug endpoint working",
-        "env_vars": {
-            "TELEGRAM_BOT_TOKEN": f"{'*' * len(TELEGRAM_BOT_TOKEN)}" if TELEGRAM_BOT_TOKEN else None,
-            "OPENAI_API_KEY": f"{'*' * len(OPENAI_API_KEY)}" if OPENAI_API_KEY else None
+        "threads": thread_count,
+        "active_threads": [t.name for t in active_threads],
+        "bot_thread_found": bot_thread_found,
+        "bot_thread_alive": any(t.is_alive() for t in active_threads if 'run_telegram_bot' in str(t)),
+        "conversation_history_size": len(conversation_history),
+        "tokens_configured": {
+            "telegram": bool(TELEGRAM_BOT_TOKEN),
+            "openai": bool(OPENAI_API_KEY)
         }
     }
 
 def run_telegram_bot():
     """Run Telegram bot - simplified version"""
+    logger.info("run_telegram_bot function called")
+    
     if not TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not found")
         return
@@ -95,6 +112,7 @@ def run_telegram_bot():
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         
         # Create new event loop for this thread
+        logger.info("Creating event loop...")
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
@@ -104,6 +122,8 @@ def run_telegram_bot():
         
     except Exception as e:
         logger.error(f"Bot error: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
 
 def main():
     """Main function"""
