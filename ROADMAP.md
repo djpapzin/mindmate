@@ -77,6 +77,23 @@ Configurable areas the bot specializes in for each user:
 
 ---
 
+### 🧠 AI Upgrades
+
+**Available Credits:** $2,500.95 OpenAI credits 🎉
+
+| Upgrade | Benefit | Priority |
+|---------|---------|----------|
+| **GPT-4o** | Superior emotional intelligence, better advice | High |
+| **Whisper API** | Transcribe voice messages to text | Medium |
+| **Extended Memory** | 50+ messages history (vs current 10) | Medium |
+| **Text-to-Speech** | Bot can respond with voice messages | Low |
+
+**Cost Estimates with GPT-4o:**
+- ~$0.02 per conversation
+- $2,500 = ~125,000 conversations (years of use!)
+
+---
+
 ## 📊 Current State (v1.0)
 
 ### ✅ Completed Features
