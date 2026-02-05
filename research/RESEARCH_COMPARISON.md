@@ -1,99 +1,126 @@
-# Research Comparison: Perplexity vs Gemini
+# Research Comparison: Perplexity vs Gemini vs ChatGPT
 
-## 🔍 Two AI Research Agents, Different Conclusions
+## 🔍 Three AI Research Agents, Different Conclusions
 
-| Aspect | Perplexity | Gemini | Winner |
-|--------|------------|--------|--------|
-| **Recommended Chat Model** | `gpt-4o-mini` | `gpt-4.1-mini` | **Needs Testing** |
-| **Empathy Benchmark Used** | EQ-Bench3 | Empathy Bench | Different metrics |
-| **Empathy Ranking** | GPT-4o-mini: Good | GPT-4.1-mini: #3 (best) | GPT-4.1-mini |
-| **Temperature** | 0.8 | 0.6-0.7 | Test both |
-| **Voice Output** | tts-1 | tts-1-hd / Hume AI EVI | Hume for premium |
-| **Reasoning Models** | ❌ Avoid | ✅ o4-mini for journals | Gemini |
-| **Personal Mode Model** | gpt-5-mini | gpt-5.2-thinking | Gemini (more detailed) |
+| Aspect | Perplexity | Gemini | ChatGPT |
+|--------|------------|--------|---------|
+| **Primary Pick** | `gpt-4o-mini` | `gpt-4.1-mini` | `gpt-5.2` |
+| **Empathy Benchmark** | EQ-Bench3 | Empathy Bench | User reports |
+| **Empathy Ranking** | GPT-4o-mini: Good | GPT-4.1-mini: #3 | GPT-5.2: "friend-like" |
+| **Temperature** | 0.8 | 0.6-0.7 | 0.7-0.8 |
+| **Voice Input** | whisper-1 | whisper-1 | GPT-4o-transcribe |
+| **Voice Output** | tts-1 | Hume AI EVI | ElevenLabs/tts-1-hd |
+| **Reasoning Models** | ❌ Avoid | ✅ o4-mini for journals | ❌ Too strict |
+| **Personal Mode** | gpt-5-mini | gpt-5.2-thinking | GPT-5.2 + GPT-4.1 |
+| **Memory Focus** | 10 messages | 100K sliding window | 1M context (GPT-4.1) |
 
 ---
 
 ## 🎯 Key Disagreements
 
 ### 1. Primary Model Choice
-- **Perplexity:** GPT-4o-mini (proven in therapy studies)
-- **Gemini:** GPT-4.1-mini (higher Empathy Bench score)
+- **Perplexity:** GPT-4o-mini (proven in therapy studies, cheapest)
+- **Gemini:** GPT-4.1-mini (highest Empathy Bench score #3)
+- **ChatGPT:** GPT-5.2 (newest flagship, "friend-like")
 
-**Resolution:** GPT-4.1-mini appears to be newer and potentially better. Worth testing!
+**Resolution:** A/B test GPT-4o-mini vs GPT-4.1-mini first. Consider GPT-5.2 for premium.
 
 ### 2. Temperature Setting
 - **Perplexity:** 0.8 (warmer, more varied)
 - **Gemini:** 0.6-0.7 (grounded but human-like)
+- **ChatGPT:** 0.7-0.8 (balanced)
 
-**Resolution:** Start with 0.7 (middle ground), adjust based on responses.
+**Resolution:** Use 0.7-0.8 (consensus range).
 
-### 3. Reasoning Models
-- **Perplexity:** Avoid o3/o4-mini entirely
-- **Gemini:** Use o4-mini for deep journal analysis
+### 3. Voice Input (STT)
+- **Perplexity:** whisper-1 (fastest, reliable)
+- **Gemini:** whisper-1 (same)
+- **ChatGPT:** GPT-4o-transcribe (best accuracy)
 
-**Resolution:** Gemini's approach is smarter - use o4-mini for specific deep analysis tasks, not real-time chat.
+**Resolution:** Test GPT-4o-transcribe vs whisper-1. ChatGPT cites it has lowest error rate.
 
-### 4. Voice Output
+### 4. Voice Output (TTS)
 - **Perplexity:** tts-1 (cheaper, natural)
-- **Gemini:** tts-1-hd or Hume AI EVI (emotional prosody)
+- **Gemini:** Hume AI EVI (emotional prosody)
+- **ChatGPT:** ElevenLabs or tts-1-hd
 
-**Resolution:** Use tts-1 for standard, consider Hume AI EVI for premium emotional voice.
+**Resolution:** tts-1-hd for standard, Hume/ElevenLabs for premium.
+
+### 5. Memory Strategy
+- **Perplexity:** 10 messages in-memory
+- **Gemini:** 100K sliding window + profile summary
+- **ChatGPT:** 1M context (GPT-4.1) + PostgreSQL
+
+**Resolution:** GPT-4.1's 1M context is a game-changer for memory. Use it!
 
 ---
 
-## ✅ Areas of Agreement
+## ✅ Areas of Agreement (All 3)
 
 | Topic | Consensus |
 |-------|-----------|
-| **Avoid GPT-5/5.2 for chat** | Both agree - too restrictive |
-| **Voice Input** | Both recommend `whisper-1` |
-| **Crisis detection** | Both say don't rely on model guardrails alone |
-| **System prompt structure** | Both recommend anti-deflection language |
-| **Memory approach** | Both suggest sliding window + summaries |
+| **Avoid o1/o3 for chat** | All agree - too strict, too slow |
+| **Crisis detection** | Don't rely on model guardrails alone |
+| **System prompt** | Empathetic persona, anti-deflection language |
+| **Temperature** | 0.7-0.8 range |
+| **Tiered approach** | Different models for free/standard/premium |
 
 ---
 
-## 🚀 Recommended Action Plan
+## 🚀 Final Recommended Action Plan
 
-### Immediate (Test Both Models)
+### Phase 1: A/B Testing (IMMEDIATE)
 ```python
-# Option A: Perplexity's choice (current)
+# Test A: Current (Perplexity's choice)
 model = "gpt-4o-mini"
 temperature = 0.8
 
-# Option B: Gemini's choice
-model = "gpt-4.1-mini"  
+# Test B: Gemini's choice  
+model = "gpt-4.1-mini"
+temperature = 0.7
+
+# Test C: ChatGPT's choice (if budget allows)
+model = "gpt-5.2"
 temperature = 0.7
 ```
 
-### Testing Protocol
-1. Run 20 conversations with GPT-4o-mini
-2. Run 20 conversations with GPT-4.1-mini
-3. Compare: empathy, directness, helpfulness
-4. Choose winner for production
+### Phase 2: Voice Integration
+- **STT:** GPT-4o-transcribe (ChatGPT) or whisper-1 (Perplexity/Gemini)
+- **TTS:** tts-1-hd standard, Hume AI EVI for premium
 
-### Future Enhancements
-- Add o4-mini for "Deep Analysis" mode (journal entries)
-- Consider Hume AI EVI for voice emotional detection
-- Implement gpt-5.2-thinking for premium sessions
+### Phase 3: Memory Upgrade
+- Move to GPT-4.1 or GPT-4.1-mini for **1M token context**
+- Implement session summaries in PostgreSQL
+- Consider vector store for semantic memory
 
 ---
 
-## 📊 Updated Model Strategy
+## 📊 Final Model Strategy (Synthesized)
 
-| Tier | Chat Model | Voice | Deep Analysis |
-|------|------------|-------|---------------|
-| **Free** | gpt-3.5-turbo | - | - |
-| **Standard** | gpt-4o-mini OR gpt-4.1-mini | whisper-1 + tts-1 | - |
-| **Premium** | gpt-5.2-thinking | whisper-1 + Hume EVI | o4-mini |
+| Tier | Chat Model | Context | Voice | Cost/100 conv |
+|------|------------|---------|-------|---------------|
+| **Free** | gpt-3.5-turbo | 16K | - | ~$0.15 |
+| **Standard** | gpt-4.1-mini | **1M** | whisper + tts-1 | ~$4.00 |
+| **Premium** | gpt-5.2 | 400K | GPT-4o-transcribe + ElevenLabs | ~$740 |
+| **Personal** | gpt-5.2 + gpt-4.1 | 1M | Hume AI EVI | Quality > Cost |
 
 ---
 
-## 💡 Key Insight
+## 💡 Key Insights from All Reports
 
-**Gemini found a model Perplexity missed:** GPT-4.1-mini ranks #3 on Empathy Bench with 40.8% score, while GPT-4o-mini only ranks #11 with 28.1%.
+1. **GPT-4.1-mini has 1M context** - Massive advantage for memory across sessions!
+2. **GPT-4.1-mini ranks #3 on Empathy Bench** - 45% better than GPT-4o-mini
+3. **GPT-5.2 is "friend-like"** but expensive (~$740/100 conv)
+4. **All agree: Avoid o-series** for casual chat (too strict/slow)
+5. **Temperature consensus: 0.7-0.8** for warmth without incoherence
+6. **GPT-4o-transcribe** may be better than whisper-1 (test it!)
 
-That's a **45% improvement in empathy** - significant for a therapy bot!
+---
 
-**Recommendation:** Test GPT-4.1-mini as potential upgrade from GPT-4o-mini.
+## 🎯 Immediate Next Steps
+
+1. **A/B Test:** GPT-4o-mini vs GPT-4.1-mini (20 convos each)
+2. **If budget allows:** Also test GPT-5.2 for premium tier
+3. **Voice:** Test GPT-4o-transcribe vs whisper-1
+4. **Memory:** Plan migration to GPT-4.1-mini for 1M context
+5. **Document:** Results in `research/AB_TEST_RESULTS.md`
