@@ -89,8 +89,28 @@ Remember: I'm here to support, not replace professional help. 💙"""
 # =============================================================================
 
 conversation_history: dict[int, list[dict[str, str]]] = {}
+user_model_selection: dict[int, str] = {}  # Track model per user for A/B testing
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 bot_running = False
+
+# Available models for A/B testing
+AVAILABLE_MODELS = {
+    "4o-mini": "gpt-4o-mini",
+    "4.1-mini": "gpt-4.1-mini", 
+    "4.1": "gpt-4.1",
+    "5-mini": "gpt-5-mini",
+    "5.2": "gpt-5.2",
+    "3.5": "gpt-3.5-turbo",
+}
+DEFAULT_MODEL = "gpt-4o-mini"
+
+def get_user_model(user_id: int) -> str:
+    """Get the model selected by user, or default."""
+    return user_model_selection.get(user_id, DEFAULT_MODEL)
+
+def set_user_model(user_id: int, model: str) -> None:
+    """Set the model for a user."""
+    user_model_selection[user_id] = model
 
 # =============================================================================
 # Flask App (Health Checks)
@@ -150,11 +170,50 @@ async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info(f"User {user_id} cleared history")
     await update.message.reply_text("Conversation history cleared. 🧹")
 
+async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /model command for A/B testing."""
+    user_id = update.effective_user.id
+    args = context.args
+    
+    # Show current model if no args
+    if not args:
+        current = get_user_model(user_id)
+        models_list = "\n".join([f"• `{k}` → {v}" for k, v in AVAILABLE_MODELS.items()])
+        await update.message.reply_text(
+            f"🧪 **A/B Testing Mode**\n\n"
+            f"**Current model:** `{current}`\n\n"
+            f"**Available models:**\n{models_list}\n\n"
+            f"**Usage:** `/model 4.1-mini`",
+            parse_mode="Markdown"
+        )
+        return
+    
+    # Set new model
+    model_key = args[0].lower()
+    if model_key in AVAILABLE_MODELS:
+        new_model = AVAILABLE_MODELS[model_key]
+        set_user_model(user_id, new_model)
+        clear_history(user_id)  # Clear history when switching models
+        logger.info(f"User {user_id} switched to model: {new_model}")
+        await update.message.reply_text(
+            f"✅ Switched to **{new_model}**\n\n"
+            f"History cleared for fresh comparison.\n"
+            f"Start chatting to test this model!",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ Unknown model: `{model_key}`\n\n"
+            f"Available: {', '.join(AVAILABLE_MODELS.keys())}",
+            parse_mode="Markdown"
+        )
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     message = update.message.text
+    current_model = get_user_model(user_id)
     
-    logger.info(f"Message from user {user_id}")
+    logger.info(f"Message from user {user_id} using model {current_model}")
     
     # Crisis detection
     if detect_crisis(message):
@@ -172,7 +231,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         messages.append({"role": "user", "content": message})
         
         response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=current_model,
             messages=messages,
             max_tokens=600,
             temperature=0.8,
@@ -213,6 +272,7 @@ async def run_bot():
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("clear", cmd_clear))
+    app.add_handler(CommandHandler("model", cmd_model))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_error_handler(error_handler)
     
