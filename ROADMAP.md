@@ -14,6 +14,31 @@ Available on **Telegram and WhatsApp**, with a **Premium Personal Mode** that ac
 
 ## 🔥 Priority Features (Brainstorm)
 
+### 🧪 A/B Model Testing (IMMEDIATE PRIORITY)
+
+**Objective:** Compare GPT-4o-mini vs GPT-4.1-mini for empathy and therapeutic quality
+
+| Model | Empathy Rank | Score | Status |
+|-------|--------------|-------|--------|
+| GPT-4o-mini | #11 | 28.1% | Currently deployed |
+| GPT-4.1-mini | #3 | 40.8% | To be tested |
+
+**Testing Protocol:**
+- [ ] Run 20 conversations with GPT-4o-mini
+- [ ] Run 20 conversations with GPT-4.1-mini
+- [ ] Compare: empathy, directness, helpfulness, response quality
+- [ ] Document findings in `research/AB_TEST_RESULTS.md`
+- [ ] Choose winner for production
+
+**Metrics to Track:**
+- Perceived warmth (1-5)
+- Directness of advice (1-5)
+- Helpfulness (1-5)
+- "AI disclaimer" frequency
+- Response coherence
+
+---
+
 ### 📱 Multi-Platform Support
 
 | Feature | Details | Priority |
