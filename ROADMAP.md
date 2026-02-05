@@ -14,28 +14,29 @@ Available on **Telegram and WhatsApp**, with a **Premium Personal Mode** that ac
 
 ## 🔥 Priority Features (Brainstorm)
 
-### 🧪 A/B Model Testing (IMMEDIATE PRIORITY)
+### 🧪 A/B Model Testing (PAUSED - Pending Persona Testing)
 
-**Objective:** Compare GPT-4o-mini vs GPT-4.1-mini for empathy and therapeutic quality
+**Current Model:** `gpt-4o-mini` (cheapest, using for now)
 
-| Model | Empathy Rank | Score | Status |
-|-------|--------------|-------|--------|
-| GPT-4o-mini | #11 | 28.1% | Currently deployed |
-| GPT-4.1-mini | #3 | 40.8% | To be tested |
+| Model | Cost/100 conv | Status |
+|-------|---------------|--------|
+| **gpt-4o-mini** | ~$0.02 | ✅ Currently deployed |
+| gpt-4.1-mini | ~$4.00 | To be tested |
+| gpt-5.2 | ~$740 | To be tested |
 
-**Testing Protocol:**
-- [ ] Run 20 conversations with GPT-4o-mini
-- [ ] Run 20 conversations with GPT-4.1-mini
-- [ ] Compare: empathy, directness, helpfulness, response quality
-- [ ] Document findings in `research/AB_TEST_RESULTS.md`
-- [ ] Choose winner for production
+**Automated Test Complete:** `research/AB_TEST_RESULTS_20260205_130125.md`
+- 15 generic prompts tested across all 3 models
+- Ratings pending - will complete with persona-specific prompts
 
-**Metrics to Track:**
-- Perceived warmth (1-5)
-- Directness of advice (1-5)
-- Helpfulness (1-5)
-- "AI disclaimer" frequency
-- Response coherence
+**Next Phase:** Persona-Based Testing
+- [ ] Create prompts for: Relationships, Finances, Bipolar, Emotional Intelligence
+- [ ] Run personalized test with focus areas
+- [ ] Rate responses based on personal relevance
+- [ ] Choose winner for Personal Mode
+
+**Testing Tools:**
+- `research/run_blind_test.py` - Run automated tests
+- `research/calculate_results.py` - Calculate winner from ratings
 
 ---
 
