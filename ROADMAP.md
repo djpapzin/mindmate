@@ -158,6 +158,33 @@ Migrated from Flask to FastAPI for better async support and performance.
 
 ---
 
+### 🧠 Semantic Memory with pgvector
+
+**Status:** 🔮 Future Enhancement
+
+Upgrade PostgreSQL with pgvector extension for semantic search capabilities.
+
+| Feature | Description |
+|---------|-------------|
+| **Semantic Search** | "Find conversations about anxiety" matches "stressed", "overwhelmed" |
+| **Context Retrieval** | Pull relevant past discussions into current conversation |
+| **Embeddings** | Store OpenAI embeddings alongside session data |
+| **RAG Pattern** | Retrieval Augmented Generation for better context |
+
+**Prerequisites:**
+- ⚠️ PostgreSQL persistent memory (basic) must be complete first
+- Evaluate if semantic search is actually needed based on usage
+
+**Implementation:**
+1. Enable pgvector extension on Render PostgreSQL
+2. Create embeddings table for session summaries
+3. Use OpenAI embeddings API to vectorize summaries
+4. Query similar sessions before responding
+
+**Priority:** Low (nice-to-have, evaluate after basic memory works)
+
+---
+
 ### 🎯 Personalization (Focus Areas)
 
 Configurable areas the bot specializes in for each user:
