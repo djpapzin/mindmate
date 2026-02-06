@@ -629,7 +629,11 @@ async def run_bot():
     logger.info("Initializing bot...")
     await app.initialize()
     await app.start()
-    await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+    # drop_pending_updates=True clears any stuck updates and prevents conflicts
+    await app.updater.start_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True
+    )
     
     bot_running = True
     logger.info("✅ Bot is running!")
