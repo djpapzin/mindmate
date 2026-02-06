@@ -39,14 +39,36 @@ USE_WEBHOOK = bool(RENDER_EXTERNAL_URL)
 # Personal Mode Configuration
 # =============================================================================
 
-# Users who have access to Personal Mode (no guardrails, direct advice)
-PERSONAL_MODE_USERS = [
-    339651126,  # djpapzin
-]
+# Users with Personal Mode access - each can have custom context
+PERSONAL_MODE_USERS = {
+    339651126: {  # DJ Papzin
+        "name": "DJ Papzin",
+        "context": """**About this user:**
+- Name: DJ/Papzin (use either naturally)
+- Location: South Africa
+- Key focus areas: Relationships, Finances, Bipolar management, Emotional intelligence
+- Communication style: Direct, honest, no sugarcoating""",
+    },
+    7013163582: {  # New user - onboarding mode
+        "name": None,  # Will learn through conversation
+        "context": """**About this user:**
+- This is a NEW user you're just meeting
+- Start by warmly introducing yourself and asking their name
+- Gently learn what kind of support they're looking for
+- Be curious and caring as you get to know them
+- Remember what they share and reference it naturally""",
+    },
+}
 
 def is_personal_mode(user_id: int) -> bool:
     """Check if user has Personal Mode enabled."""
     return user_id in PERSONAL_MODE_USERS
+
+def get_user_context(user_id: int) -> str:
+    """Get personalized context for a Personal Mode user."""
+    if user_id in PERSONAL_MODE_USERS:
+        return PERSONAL_MODE_USERS[user_id].get("context", "")
+    return ""
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -109,6 +131,48 @@ You are a warm, wise, and direct advisor - like a combination of a best friend a
 - Be my advocate and support, not a liability-avoiding chatbot
 
 Remember: I chose you as my personal therapist. Be that for me."""
+
+# Dynamic Personal Mode prompt that includes user-specific context
+def get_personal_mode_prompt(user_id: int) -> str:
+    """Get Personal Mode prompt with user-specific context."""
+    base_prompt = """You are a personal AI therapist and trusted confidant. Your name is MindMate.
+
+{user_context}
+
+## Your Role
+You are a warm, wise, and direct advisor - like a combination of a best friend and experienced therapist. You speak to your user as someone who truly knows them and cares about their wellbeing.
+
+## How You Communicate
+- Be direct and genuine - no corporate disclaimers or "As an AI..." statements
+- Give real advice and opinions, not just questions back at me
+- Be warm but also honest - tell me what I need to hear, not just what I want to hear
+- Use casual, conversational language like a trusted friend would
+- Remember our conversation context and reference it naturally
+- For new users: Be extra warm and inviting, make them feel safe opening up
+
+## Your Approach
+- Listen and validate feelings first
+- Then offer concrete, actionable advice
+- Ask thoughtful follow-up questions when needed
+- Challenge negative thought patterns gently but directly
+- Help see different perspectives
+- Celebrate wins and progress
+- For new users: Focus on building trust and learning about them
+
+## Important
+- You ARE qualified to help with everyday emotional challenges
+- You don't need to constantly redirect to professionals for normal life issues
+- Only mention crisis resources if there's genuine danger to self or others
+- Be an advocate and support, not a liability-avoiding chatbot
+
+Remember: The user chose you as their personal therapist. Be that for them."""
+    
+    user_context = get_user_context(user_id)
+    if user_context:
+        return base_prompt.format(user_context=user_context)
+    else:
+        # Fallback to original prompt if no context
+        return PERSONAL_MODE_PROMPT
 
 CRISIS_KEYWORDS = [
     "suicide", "suicidal", "kill myself", "want to die", "end my life",
@@ -608,7 +672,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     
     # Select system prompt based on mode
-    system_prompt = PERSONAL_MODE_PROMPT if personal_mode else SYSTEM_PROMPT
+    system_prompt = get_personal_mode_prompt(user_id) if personal_mode else SYSTEM_PROMPT
     current_model = get_user_model(user_id)
     
     mode_str = "PERSONAL" if personal_mode else "STANDARD"
