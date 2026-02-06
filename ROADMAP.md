@@ -125,6 +125,29 @@ summaries (
 
 ---
 
+### ⚡ Switch to FastAPI
+
+Migrate from Flask to FastAPI for better async support and performance.
+
+| Benefit | Description |
+|---------|-------------|
+| **Native Async** | No more bridging sync Flask with async Telegram |
+| **Better Performance** | Faster request handling |
+| **Auto Documentation** | Built-in Swagger/OpenAPI docs |
+| **Type Hints** | Better code validation |
+| **Modern** | Industry standard for Python APIs |
+
+**Migration Steps:**
+1. Replace Flask with FastAPI + Uvicorn
+2. Convert routes to async endpoints
+3. Remove `asyncio.run_coroutine_threadsafe` hacks
+4. Update Render start command to use Uvicorn
+5. Test all endpoints
+
+**Priority:** Medium (current Flask works, but FastAPI is cleaner)
+
+---
+
 ### 🎯 Personalization (Focus Areas)
 
 Configurable areas the bot specializes in for each user:
