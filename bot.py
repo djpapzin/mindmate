@@ -240,7 +240,6 @@ def health_simple():
 def webhook():
     """Handle incoming Telegram webhook updates."""
     from flask import request
-    import json
     
     if telegram_app is None:
         logger.error("Telegram app not initialized")
@@ -248,16 +247,18 @@ def webhook():
     
     try:
         update_data = request.get_json(force=True)
+        logger.info(f"Webhook received update: {update_data.get('update_id', 'unknown')}")
+        
         update = Update.de_json(update_data, telegram_app.bot)
         
-        # Process the update asynchronously
-        asyncio.run_coroutine_threadsafe(
-            telegram_app.process_update(update),
-            asyncio.get_event_loop()
-        )
+        # Process the update using asyncio.run() for proper async handling
+        asyncio.run(telegram_app.process_update(update))
+        
         return "OK", 200
     except Exception as e:
         logger.error(f"Webhook error: {e}")
+        import traceback
+        traceback.print_exc()
         return "Error", 500
 
 # =============================================================================
