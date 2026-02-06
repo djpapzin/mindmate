@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://t.me/mywellnesscompanion_bot">🤖 Try MindMate</a> •
   <a href="#features">Features</a> •
-  <a href="#roadmap">Roadmap</a> •
+  <a href="#personal-mode">Personal Mode</a> •
   <a href="#deployment">Deploy</a>
 </p>
 
@@ -15,87 +15,84 @@
 
 ## ✨ Features
 
-### Current (v1.0)
+### Core Features
 | Feature | Description |
 |---------|-------------|
 | 💬 **Empathetic Chat** | AI-powered conversations with emotional intelligence |
-| 🚨 **Crisis Detection** | Automatic detection of crisis keywords with immediate helpline resources |
-| 🇿🇦 **SA Resources** | South African mental health helplines (SADAG, Lifeline, etc.) |
-| 📝 **Context Memory** | Remembers last 10 messages per user for coherent conversations |
-| 👥 **User Isolation** | Private conversations - users can't see each other's chats |
-| 🔒 **Privacy First** | No data stored permanently, conversations reset on deploy |
+| 🚨 **Crisis Detection** | Automatic detection with SA helpline resources (SADAG) |
+| 📝 **Context Memory** | Remembers last 10 messages per conversation |
+| 🔓 **Personal Mode** | Premium experience with direct advice (no disclaimers) |
+| 🧪 **A/B Testing** | Built-in model comparison tools |
+| ⚡ **FastAPI Backend** | Modern async architecture with webhooks |
 
 ### Commands
 | Command | Description |
 |---------|-------------|
-| `/start` | Start a conversation (clears history) |
+| `/start` | Start a conversation |
 | `/clear` | Clear conversation history |
 | `/help` | Show available commands |
+| `/mode` | Check your mode (Standard/Personal) |
+| `/model` | Switch AI models for A/B testing |
+| `/test` | Start blind model comparison |
+| `/rate` | Rate responses in blind test |
+| `/results` | View blind test results |
 
 ---
 
-## 🗺️ Roadmap
+## 🔓 Personal Mode
 
-### 🎯 Phase 1: Foundation (v1.1) - *Next Up*
-- [ ] Persistent database (PostgreSQL/Redis)
-- [ ] User profiles (name, preferences)
-- [ ] Rate limiting & abuse prevention
-- [ ] Usage analytics dashboard
-- [ ] `/mood` command - mood tracking
+A private, unfiltered AI therapist experience for authorized users.
 
-### 🌱 Phase 2: Wellness Tools (v2.0)
-- [ ] `/mood` - Daily mood tracking with insights
-- [ ] `/breathe` - Guided breathing exercises (4-7-8, box breathing)
-- [ ] `/journal` - Prompted journaling for reflection
-- [ ] `/gratitude` - Daily gratitude practice
-- [ ] Daily check-in reminders (opt-in)
-- [ ] Mood history & trends visualization
+| Feature | Standard Mode | Personal Mode |
+|---------|---------------|---------------|
+| AI Disclaimers | "As an AI..." | ❌ None |
+| Advice Style | Generic tips | Direct guidance |
+| Crisis Response | Hard stop | Soft prompt + continue |
+| Tone | Professional | Trusted friend |
+| User Context | None | Name, focus areas |
 
-### 🎨 Phase 3: Personalization (v2.5)
-- [ ] Remember user's name permanently
-- [ ] Personalized coping strategies based on history
-- [ ] Custom conversation styles (casual, professional, gentle)
-- [ ] Track recurring concerns & provide tailored resources
-- [ ] Progress insights ("You've been feeling better this week!")
+**Personal Mode is locked to specific user IDs** - perfect for personal use.
 
-### 🚀 Phase 4: Advanced Features (v3.0)
-- [ ] 🎤 Voice message support
-- [ ] 🌍 Multi-language support (Zulu, Afrikaans, Xhosa)
-- [ ] 🧘 Meditation timer with ambient sounds
-- [ ] 📅 Calendar integration for self-care reminders
-- [ ] 🆘 Emergency contact notification (with consent)
-- [ ] 📊 Weekly wellness reports
-
-### 💎 Phase 5: Scale (v4.0)
-- [ ] Premium features tier
-- [ ] Therapist directory integration
-- [ ] Corporate wellness program support
-- [ ] API for third-party integrations
-- [ ] White-label solution
+### Focus Areas (Personal Mode)
+- 💑 Relationships & Dating
+- 💰 Financial Stress
+- 🧠 Bipolar Management
+- 😰 Anxiety & Mood
+- 💼 Work/Career
 
 ---
 
-## 🛠️ Technical Roadmap
+## 🛠️ Tech Stack
 
-| Improvement | Status | Priority |
-|-------------|--------|----------|
-| Webhook mode (vs polling) | 🔜 Planned | Medium |
-| Docker containerization | 🔜 Planned | Low |
-| CI/CD with GitHub Actions | 🔜 Planned | Medium |
-| Structured logging (Sentry) | 🔜 Planned | Low |
-| Test coverage > 80% | ✅ Done | High |
-| Clean codebase | ✅ Done | High |
-| Render deployment | ✅ Done | High |
+| Component | Technology |
+|-----------|------------|
+| **Framework** | FastAPI + Uvicorn |
+| **Bot Library** | python-telegram-bot 21.0 |
+| **AI** | OpenAI GPT-4o-mini |
+| **Hosting** | Render (free tier) |
+| **Uptime** | UptimeRobot |
+
+### Architecture
+```
+Telegram → Webhook → FastAPI → OpenAI → Response
+                 ↓
+            /webhook endpoint (async)
+```
 
 ---
 
 ## 🚀 Deployment
 
-**Live Instance:** https://mindmate-uidn.onrender.com
+### Live Instances
 
-### Deploy Your Own (Free)
+| Bot | URL | Branch |
+|-----|-----|--------|
+| **Production** | @mywellnesscompanion_bot | `main` |
+| **Development** | @mindmate_dev_bot | `feature/*` |
 
-#### Option 1: Render (Recommended)
+### Deploy Your Own
+
+#### Render (Recommended)
 1. Fork this repository
 2. Go to [render.com](https://render.com) → New Web Service
 3. Connect your GitHub repo
@@ -103,20 +100,17 @@
    ```
    Build Command: pip install -r requirements.txt
    Start Command: python bot.py
-   Instance Type: Free
    ```
 5. Add Environment Variables:
-   - `TELEGRAM_BOT_TOKEN` - from [@BotFather](https://t.me/botfather)
-   - `OPENAI_API_KEY` - from [OpenAI](https://platform.openai.com/api-keys)
+   | Variable | Description |
+   |----------|-------------|
+   | `TELEGRAM_BOT_TOKEN` | From [@BotFather](https://t.me/botfather) |
+   | `OPENAI_API_KEY` | From [OpenAI](https://platform.openai.com/api-keys) |
+   | `RENDER_EXTERNAL_URL` | Your Render URL (enables webhooks) |
+
 6. Deploy!
 
-> 💡 **Tip:** Use [UptimeRobot](https://uptimerobot.com) to ping your URL every 5 minutes to prevent cold starts.
-
-#### Option 2: Railway
-1. Fork this repo
-2. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub
-3. Add environment variables
-4. Deploy!
+> 💡 **Tip:** Use [UptimeRobot](https://uptimerobot.com) to ping `/health` every 5 minutes.
 
 ---
 
@@ -134,73 +128,79 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your tokens
 
-# Run the bot
+# Run the bot (polling mode - no RENDER_EXTERNAL_URL)
 python bot.py
+```
 
-# Run tests
-python test_bot.py
+### Environment Variables
+```env
+TELEGRAM_BOT_TOKEN=your_token_here
+OPENAI_API_KEY=your_key_here
+RENDER_EXTERNAL_URL=https://your-app.onrender.com  # Optional: enables webhooks
 ```
 
 ---
 
-## 🧪 Testing
+## 🧪 A/B Model Testing
 
-```bash
-python test_bot.py
+Built-in blind testing to compare AI models:
+
+```
+1. /test              → Start blind test
+2. Send a message     → Get 3 responses (A, B, C)
+3. /rate A:4 B:5 C:3  → Rate each response
+4. Repeat 10-20x
+5. /results           → See winner!
 ```
 
-**Test Coverage:**
-- ✅ Crisis keyword detection
-- ✅ Conversation history management
-- ✅ User isolation
-- ✅ Message format validation
-- ✅ History limit enforcement
+**Models Available:** GPT-4o-mini, GPT-4.1-mini, GPT-5.2
+
+Automated testing script: `research/run_blind_test.py`
 
 ---
 
 ## 🆘 Crisis Support
 
-MindMate automatically detects crisis-related messages and provides immediate access to help:
+MindMate detects crisis keywords and provides immediate resources:
 
 | Resource | Contact | Available |
 |----------|---------|-----------|
 | **SADAG** | 0800 567 567 | 24/7 |
 | **Lifeline SA** | 0861 322 322 | 24/7 |
 | **Suicide Crisis Line** | 0800 567 567 | 24/7 |
-| **LifeLine WhatsApp** | 0600 123 456 | 24/7 |
-
-**Crisis keywords detected:** suicide, self-harm, kill myself, end my life, want to die, no reason to live, and more.
 
 ---
 
-## ⚠️ Important Disclaimers
+## 📋 Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for detailed plans:
+
+- [x] Personal Mode
+- [x] FastAPI Migration
+- [x] Webhook Support
+- [x] A/B Testing Tools
+- [ ] Persistent Memory (PostgreSQL)
+- [ ] WhatsApp Integration (Twilio)
+- [ ] Voice Messages
+- [ ] Daily Check-ins
+
+---
+
+## ⚠️ Disclaimers
 
 > **MindMate is NOT a replacement for professional mental health support.**
 
-- This is an AI companion for emotional reflection and basic wellness support
-- If you're experiencing a mental health crisis, please contact a professional or crisis helpline
-- The bot does not provide medical advice, diagnosis, or treatment
-- Conversations are not monitored by mental health professionals
+- This is an AI companion for emotional reflection
+- If you're in crisis, contact a professional or helpline
+- The bot does not provide medical advice or diagnosis
 
 ---
 
 ## 🔒 Security
 
-- Never commit `.env` files to version control
-- Rotate tokens immediately if compromised
-- Bot token: Revoke via [@BotFather](https://t.me/botfather)
-- OpenAI key: Rotate at [platform.openai.com](https://platform.openai.com/api-keys)
-
----
-
-## 🤝 Contributing
-
-Contributions welcome! Please:
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+- Never commit `.env` files
+- Personal Mode is locked by user ID
+- Rotate tokens if compromised
 
 ---
 
