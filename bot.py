@@ -149,6 +149,10 @@ user_model_selection: dict[int, str] = {}  # Track model per user for A/B testin
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 bot_running = False
 
+# Message deduplication to prevent double responses during deployments
+processed_messages: set[int] = set()
+MAX_PROCESSED_MESSAGES = 1000  # Keep last 1000 message IDs
+
 # Available models for A/B testing
 AVAILABLE_MODELS = {
     "4o-mini": "gpt-4o-mini",
@@ -470,6 +474,21 @@ async def cmd_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await update.message.reply_text(results_text, parse_mode="Markdown")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Deduplicate messages to prevent double responses during deployments
+    message_id = update.message.message_id
+    if message_id in processed_messages:
+        logger.info(f"Skipping duplicate message {message_id}")
+        return
+    
+    # Track this message as processed
+    processed_messages.add(message_id)
+    # Keep set from growing too large
+    if len(processed_messages) > MAX_PROCESSED_MESSAGES:
+        # Remove oldest entries (convert to list, slice, convert back)
+        to_remove = list(processed_messages)[:MAX_PROCESSED_MESSAGES // 2]
+        for msg_id in to_remove:
+            processed_messages.discard(msg_id)
+    
     user_id = update.effective_user.id
     message = update.message.text
     personal_mode = is_personal_mode(user_id)
