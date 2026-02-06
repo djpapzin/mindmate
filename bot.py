@@ -7,8 +7,12 @@ import asyncio
 import logging
 import os
 import threading
+import uuid
 
 from dotenv import load_dotenv
+
+# Unique instance ID to help debug multiple instances
+INSTANCE_ID = str(uuid.uuid4())[:8]
 from flask import Flask, jsonify
 from openai import OpenAI, OpenAIError
 from telegram import Update
@@ -212,7 +216,12 @@ flask_app = Flask(__name__)
 
 @flask_app.route("/")
 def health():
-    return jsonify({"status": "healthy", "service": "mindmate-bot", "bot_running": bot_running})
+    return jsonify({
+        "status": "healthy", 
+        "service": "mindmate-bot", 
+        "bot_running": bot_running,
+        "instance_id": INSTANCE_ID
+    })
 
 @flask_app.route("/health")
 def health_simple():
@@ -649,17 +658,23 @@ async def run_bot():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_error_handler(error_handler)
     
-    logger.info("Initializing bot...")
+    logger.info(f"[{INSTANCE_ID}] Initializing bot...")
     await app.initialize()
     await app.start()
+    
     # drop_pending_updates=True clears any stuck updates and prevents conflicts
-    await app.updater.start_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True
-    )
+    logger.info(f"[{INSTANCE_ID}] Starting polling...")
+    try:
+        await app.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
+        )
+    except Exception as e:
+        logger.error(f"[{INSTANCE_ID}] Polling error: {e}")
+        raise
     
     bot_running = True
-    logger.info("✅ Bot is running!")
+    logger.info(f"[{INSTANCE_ID}] ✅ Bot is running!")
     
     try:
         while True:
