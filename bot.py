@@ -219,8 +219,9 @@ def save_test_result(user_id: int, prompt: str, mapping: dict, ratings: dict) ->
 
 flask_app = Flask(__name__)
 
-# Global reference to the telegram application (set during bot startup)
+# Global reference to the telegram application and event loop
 telegram_app = None
+bot_loop = None  # Persistent event loop for the bot
 
 @flask_app.route("/")
 def health():
@@ -241,8 +242,8 @@ def webhook():
     """Handle incoming Telegram webhook updates."""
     from flask import request
     
-    if telegram_app is None:
-        logger.error("Telegram app not initialized")
+    if telegram_app is None or bot_loop is None:
+        logger.error("Telegram app or event loop not initialized")
         return "Error", 500
     
     try:
@@ -251,8 +252,12 @@ def webhook():
         
         update = Update.de_json(update_data, telegram_app.bot)
         
-        # Process the update using asyncio.run() for proper async handling
-        asyncio.run(telegram_app.process_update(update))
+        # Submit to the persistent bot event loop and wait for completion
+        future = asyncio.run_coroutine_threadsafe(
+            telegram_app.process_update(update),
+            bot_loop
+        )
+        future.result(timeout=30)  # Wait up to 30 seconds
         
         return "OK", 200
     except Exception as e:
@@ -673,11 +678,14 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 # =============================================================================
 
 async def run_bot():
-    global bot_running, telegram_app
+    global bot_running, telegram_app, bot_loop
     
     if not TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not configured!")
         return
+    
+    # Store the event loop for webhook handler to use
+    bot_loop = asyncio.get_running_loop()
     
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     telegram_app = app  # Set global reference for webhook handler
