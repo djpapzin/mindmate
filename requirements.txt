@@ -1,4 +1,5 @@
 python-telegram-bot==21.0
 openai
 python-dotenv
-flask
+fastapi
+uvicorn[standard]

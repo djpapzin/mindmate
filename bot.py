@@ -6,17 +6,18 @@ A compassionate chatbot providing 24/7 mental wellness support.
 import asyncio
 import logging
 import os
-import threading
 import uuid
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-
-# Unique instance ID to help debug multiple instances
-INSTANCE_ID = str(uuid.uuid4())[:8]
-from flask import Flask, jsonify
+from fastapi import FastAPI, Request
 from openai import OpenAI, OpenAIError
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import uvicorn
+
+# Unique instance ID to help debug multiple instances
+INSTANCE_ID = str(uuid.uuid4())[:8]
 
 # =============================================================================
 # Configuration
@@ -214,57 +215,98 @@ def save_test_result(user_id: int, prompt: str, mapping: dict, ratings: dict) ->
     })
 
 # =============================================================================
-# Flask App (Health Checks)
+# FastAPI App
 # =============================================================================
 
-flask_app = Flask(__name__)
+# Global reference to the telegram application
+telegram_app: Application = None
 
-# Global reference to the telegram application and event loop
-telegram_app = None
-bot_loop = None  # Persistent event loop for the bot
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown events for FastAPI."""
+    global telegram_app
+    
+    # Startup: Initialize and start the Telegram bot
+    logger.info(f"[{INSTANCE_ID}] Starting MindMate Bot...")
+    
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("TELEGRAM_BOT_TOKEN not configured!")
+    else:
+        telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        
+        # Register handlers
+        telegram_app.add_handler(CommandHandler("start", cmd_start))
+        telegram_app.add_handler(CommandHandler("help", cmd_help))
+        telegram_app.add_handler(CommandHandler("clear", cmd_clear))
+        telegram_app.add_handler(CommandHandler("mode", cmd_mode))
+        telegram_app.add_handler(CommandHandler("model", cmd_model))
+        telegram_app.add_handler(CommandHandler("test", cmd_test))
+        telegram_app.add_handler(CommandHandler("rate", cmd_rate))
+        telegram_app.add_handler(CommandHandler("results", cmd_results))
+        telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        telegram_app.add_error_handler(error_handler)
+        
+        await telegram_app.initialize()
+        await telegram_app.start()
+        
+        # Set up webhook if configured
+        if USE_WEBHOOK:
+            webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
+            logger.info(f"[{INSTANCE_ID}] Setting up webhook: {webhook_url}")
+            await telegram_app.bot.delete_webhook(drop_pending_updates=True)
+            await telegram_app.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES)
+            logger.info(f"[{INSTANCE_ID}] ✅ Webhook set successfully!")
+        else:
+            logger.info(f"[{INSTANCE_ID}] Starting polling mode...")
+            await telegram_app.updater.start_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+        
+        logger.info(f"[{INSTANCE_ID}] ✅ Bot is running!")
+    
+    yield  # App is running
+    
+    # Shutdown: Stop the bot
+    if telegram_app:
+        logger.info(f"[{INSTANCE_ID}] Shutting down bot...")
+        if telegram_app.updater.running:
+            await telegram_app.updater.stop()
+        await telegram_app.stop()
+        await telegram_app.shutdown()
 
-@flask_app.route("/")
-def health():
-    return jsonify({
+fastapi_app = FastAPI(title="MindMate Bot", lifespan=lifespan)
+
+@fastapi_app.get("/")
+async def health():
+    return {
         "status": "healthy", 
         "service": "mindmate-bot", 
-        "bot_running": bot_running,
         "instance_id": INSTANCE_ID,
         "mode": "webhook" if USE_WEBHOOK else "polling"
-    })
+    }
 
-@flask_app.route("/health")
-def health_simple():
-    return "OK", 200
+@fastapi_app.get("/health")
+async def health_simple():
+    return {"status": "ok"}
 
-@flask_app.route("/webhook", methods=["POST"])
-def webhook():
+@fastapi_app.post("/webhook")
+async def webhook(request: Request):
     """Handle incoming Telegram webhook updates."""
-    from flask import request
-    
-    if telegram_app is None or bot_loop is None:
-        logger.error("Telegram app or event loop not initialized")
-        return "Error", 500
+    if telegram_app is None:
+        logger.error("Telegram app not initialized")
+        return {"error": "Bot not initialized"}, 500
     
     try:
-        update_data = request.get_json(force=True)
+        update_data = await request.json()
         logger.info(f"Webhook received update: {update_data.get('update_id', 'unknown')}")
         
         update = Update.de_json(update_data, telegram_app.bot)
+        await telegram_app.process_update(update)
         
-        # Submit to the persistent bot event loop and wait for completion
-        future = asyncio.run_coroutine_threadsafe(
-            telegram_app.process_update(update),
-            bot_loop
-        )
-        future.result(timeout=30)  # Wait up to 30 seconds
-        
-        return "OK", 200
+        return {"status": "ok"}
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         import traceback
         traceback.print_exc()
-        return "Error", 500
+        return {"error": str(e)}
 
 # =============================================================================
 # Conversation History
@@ -674,90 +716,12 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.error(f"Bot error: {context.error}")
 
 # =============================================================================
-# Bot Runner
-# =============================================================================
-
-async def run_bot():
-    global bot_running, telegram_app, bot_loop
-    
-    if not TELEGRAM_BOT_TOKEN:
-        logger.error("TELEGRAM_BOT_TOKEN not configured!")
-        return
-    
-    # Store the event loop for webhook handler to use
-    bot_loop = asyncio.get_running_loop()
-    
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    telegram_app = app  # Set global reference for webhook handler
-    
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(CommandHandler("clear", cmd_clear))
-    app.add_handler(CommandHandler("mode", cmd_mode))
-    app.add_handler(CommandHandler("model", cmd_model))
-    app.add_handler(CommandHandler("test", cmd_test))
-    app.add_handler(CommandHandler("rate", cmd_rate))
-    app.add_handler(CommandHandler("results", cmd_results))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_error_handler(error_handler)
-    
-    logger.info(f"[{INSTANCE_ID}] Initializing bot...")
-    await app.initialize()
-    await app.start()
-    
-    if USE_WEBHOOK:
-        # Webhook mode - no polling conflicts!
-        webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
-        logger.info(f"[{INSTANCE_ID}] Setting up webhook: {webhook_url}")
-        
-        # Delete any existing webhook first
-        await app.bot.delete_webhook(drop_pending_updates=True)
-        
-        # Set the new webhook
-        await app.bot.set_webhook(
-            url=webhook_url,
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
-        )
-        logger.info(f"[{INSTANCE_ID}] ✅ Webhook set successfully!")
-    else:
-        # Polling mode (fallback for local development)
-        logger.info(f"[{INSTANCE_ID}] Starting polling (no RENDER_EXTERNAL_URL set)...")
-        try:
-            await app.updater.start_polling(
-                allowed_updates=Update.ALL_TYPES,
-                drop_pending_updates=True
-            )
-        except Exception as e:
-            logger.error(f"[{INSTANCE_ID}] Polling error: {e}")
-            raise
-    
-    bot_running = True
-    logger.info(f"[{INSTANCE_ID}] ✅ Bot is running!")
-    
-    try:
-        while True:
-            await asyncio.sleep(1)
-    except asyncio.CancelledError:
-        pass
-    finally:
-        bot_running = False
-        logger.info("Shutting down...")
-        await app.updater.stop()
-        await app.stop()
-        await app.shutdown()
-
-def run_flask():
-    logger.info(f"Starting health server on port {PORT}")
-    flask_app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
-
-# =============================================================================
 # Main
 # =============================================================================
 
 def main():
     logger.info("=" * 50)
-    logger.info("Starting MindMate Bot")
+    logger.info("Starting MindMate Bot with FastAPI")
     logger.info("=" * 50)
     
     if not TELEGRAM_BOT_TOKEN:
@@ -766,16 +730,13 @@ def main():
     if not OPENAI_API_KEY:
         logger.warning("⚠️ OPENAI_API_KEY not set")
     
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    
-    try:
-        asyncio.run(run_bot())
-    except KeyboardInterrupt:
-        logger.info("Bot stopped")
-    except Exception as e:
-        logger.error(f"Fatal: {e}")
-        raise
+    # Run FastAPI with Uvicorn
+    uvicorn.run(
+        fastapi_app,
+        host="0.0.0.0",
+        port=PORT,
+        log_level="info"
+    )
 
 if __name__ == "__main__":
     main()
