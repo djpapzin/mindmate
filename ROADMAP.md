@@ -185,6 +185,86 @@ Upgrade PostgreSQL with pgvector extension for semantic search capabilities.
 
 ---
 
+### 📞 Voice Calls (Twilio + ElevenLabs)
+
+**Status:** 🔮 Future Enhancement
+
+Enable phone call conversations with MindMate using voice.
+
+| Component | Purpose |
+|-----------|---------|
+| **Twilio Voice** | Handle incoming/outgoing phone calls |
+| **ElevenLabs** | Natural text-to-speech (AI voice) |
+| **Whisper/Deepgram** | Speech-to-text transcription |
+| **OpenAI** | Generate responses (same as chat) |
+
+**Flow:**
+```
+User calls → Twilio receives → Whisper transcribes → OpenAI responds → ElevenLabs speaks → User hears
+```
+
+**Features:**
+- Call the bot anytime for voice support
+- Natural, empathetic AI voice
+- Same Personal Mode experience
+- Crisis detection still active
+
+**Implementation:**
+1. Set up Twilio phone number
+2. Create voice webhook endpoint
+3. Integrate Whisper for speech-to-text
+4. Integrate ElevenLabs for text-to-speech
+5. Handle real-time streaming
+
+**Priority:** Medium (powerful feature, but complex)
+
+---
+
+### 🔄 n8n Automation
+
+**Status:** 🔮 Future Enhancement
+
+Automate workflows using n8n (self-hosted automation platform).
+
+| Automation | Description |
+|------------|-------------|
+| **Daily Check-ins** | Scheduled messages: "How are you feeling today?" |
+| **Mood Reports** | Weekly email summary of mood trends |
+| **Crisis Alerts** | Notify emergency contact (with consent) |
+| **Backup Data** | Auto-export conversation summaries |
+| **Multi-channel Sync** | Sync between Telegram/WhatsApp |
+
+**Why n8n?**
+- Self-hosted (privacy)
+- Visual workflow builder
+- Connects to 400+ apps
+- Free and open source
+
+**Implementation:**
+1. Deploy n8n on Render/Railway
+2. Connect to PostgreSQL database
+3. Create webhook triggers from bot
+4. Build automation workflows
+5. Schedule recurring tasks
+
+**Example Workflows:**
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│ Every 9 AM  │────►│ Check user  │────►│ Send Telegram│
+│ (Schedule)  │     │ preferences │     │ "Good morning│
+└─────────────┘     └─────────────┘     │  check-in"  │
+                                        └─────────────┘
+
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│ Crisis      │────►│ Log to DB   │────►│ Email alert │
+│ detected    │     │             │     │ (if enabled)│
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+**Priority:** Medium (enables powerful automations)
+
+---
+
 ### 🎯 Personalization (Focus Areas)
 
 Configurable areas the bot specializes in for each user:
