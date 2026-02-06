@@ -61,18 +61,67 @@ Available on **Telegram and WhatsApp**, with a **Premium Personal Mode** that ac
 
 A private, unfiltered AI therapist experience. No corporate guardrails.
 
-| Feature | Description |
-|---------|-------------|
-| **No AI Disclaimers** | Removes "As an AI..." and robotic responses |
-| **No Helpline Redirects** | Direct support instead of deflecting to hotlines |
-| **Direct Personalized Advice** | Therapist-style guidance, not generic tips |
-| **Focus Areas Config** | User sets their specific challenges |
-| **Memory Across Sessions** | Remembers your history, patterns, progress |
-| **Private by Default** | Locked to specific user IDs |
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **No AI Disclaimers** | Removes "As an AI..." and robotic responses | ✅ Done |
+| **No Helpline Redirects** | Direct support instead of deflecting to hotlines | ✅ Done |
+| **Direct Personalized Advice** | Therapist-style guidance, not generic tips | ✅ Done |
+| **Softer Crisis Handling** | Shows resources but continues conversation | ✅ Done |
+| **User Context in Prompt** | Name, location, focus areas hardcoded | ✅ Done |
+| **Focus Areas Config** | User sets their specific challenges via /profile | 🔜 Next |
+| **Memory Across Sessions** | Remembers your history, patterns, progress | 🔜 Next |
+| **Private by Default** | Locked to specific user IDs | ✅ Done |
+
+**Current Implementation:**
+- Branch: `feature/personal-mode`
+- Dev Bot: @mindmate_dev_bot
+- Authorized User: 339651126 (djpapzin)
 
 **Business Model:**
 - Free tier: Standard MindMate (with guardrails)
 - Premium tier: Personal Mode (subscription - future)
+
+---
+
+### 🧠 Persistent Memory (NEXT PRIORITY)
+
+Long-term memory so the bot truly knows you across sessions.
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| **PostgreSQL Database** | Store user profiles & conversation summaries | High |
+| **User Profile (`/profile`)** | Edit name, focus areas, preferences | High |
+| **Session Summaries** | Auto-summarize each conversation | Medium |
+| **Progress Tracking** | "Last time you mentioned..." | Medium |
+| **Memory Retrieval** | Pull relevant past context into prompts | Medium |
+
+**Database Schema (Planned):**
+```sql
+-- Users table
+users (
+  telegram_id BIGINT PRIMARY KEY,
+  name TEXT,
+  focus_areas TEXT[],
+  preferences JSONB,
+  created_at TIMESTAMP
+)
+
+-- Conversation summaries
+summaries (
+  id SERIAL PRIMARY KEY,
+  user_id BIGINT REFERENCES users,
+  summary TEXT,
+  key_topics TEXT[],
+  mood_indicators TEXT[],
+  created_at TIMESTAMP
+)
+```
+
+**Implementation Steps:**
+1. Set up PostgreSQL on Render (free tier)
+2. Create `/profile` command to view/edit profile
+3. Auto-save session summaries on /clear or timeout
+4. Inject relevant summaries into system prompt
 
 ---
 
