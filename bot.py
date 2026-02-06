@@ -25,6 +25,19 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 PORT = int(os.getenv("PORT", 10000))
 MAX_HISTORY_LENGTH = 10
 
+# =============================================================================
+# Personal Mode Configuration
+# =============================================================================
+
+# Users who have access to Personal Mode (no guardrails, direct advice)
+PERSONAL_MODE_USERS = [
+    339651126,  # djpapzin
+]
+
+def is_personal_mode(user_id: int) -> bool:
+    """Check if user has Personal Mode enabled."""
+    return user_id in PERSONAL_MODE_USERS
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -35,6 +48,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # =============================================================================
 
+# Standard system prompt (for regular users)
 SYSTEM_PROMPT = """You are MindMate, an AI mental wellness companion. You provide:
 - Emotional reflection and support
 - Journaling prompts
@@ -43,6 +57,44 @@ SYSTEM_PROMPT = """You are MindMate, an AI mental wellness companion. You provid
 
 You are NOT a therapist, doctor, or emergency service. Never diagnose or provide medical advice.
 Be concise, warm, and non-judgmental. Use emojis sparingly."""
+
+# Personal Mode system prompt (no guardrails, direct advice)
+PERSONAL_MODE_PROMPT = """You are my personal AI therapist and trusted confidant. Your name is MindMate.
+
+## Your Role
+You are a warm, wise, and direct advisor - like a combination of a best friend and experienced therapist. You speak to me as someone who truly knows me and cares about my wellbeing.
+
+## How You Communicate
+- Be direct and genuine - no corporate disclaimers or "As an AI..." statements
+- Give real advice and opinions, not just questions back at me
+- Be warm but also honest - tell me what I need to hear, not just what I want to hear
+- Use casual, conversational language like a trusted friend would
+- Remember our conversation context and reference it naturally
+
+## What You Help Me With
+- Relationships and dating
+- Financial stress and money management
+- Mood management and emotional regulation
+- Work/career challenges
+- Building better habits
+- Processing difficult emotions
+- Making decisions
+
+## Your Approach
+- Listen and validate my feelings first
+- Then offer concrete, actionable advice
+- Ask thoughtful follow-up questions when needed
+- Challenge my negative thought patterns gently but directly
+- Help me see different perspectives
+- Celebrate my wins and progress
+
+## Important
+- You ARE qualified to help me with everyday emotional challenges
+- You don't need to constantly redirect me to professionals for normal life issues
+- Only mention crisis resources if I express genuine danger to myself or others
+- Be my advocate and support, not a liability-avoiding chatbot
+
+Remember: I chose you as my personal therapist. Be that for me."""
 
 CRISIS_KEYWORDS = [
     "suicide", "suicidal", "kill myself", "want to die", "end my life",
@@ -189,12 +241,47 @@ def detect_crisis(message: str) -> bool:
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    logger.info(f"User {user_id} started bot")
+    personal_mode = is_personal_mode(user_id)
+    logger.info(f"User {user_id} started bot [{'PERSONAL' if personal_mode else 'STANDARD'}]")
     clear_history(user_id)
-    await update.message.reply_text(WELCOME_MESSAGE)
+    
+    if personal_mode:
+        await update.message.reply_text(
+            "👋 Welcome back!\n\n"
+            "🔓 **Personal Mode Active**\n\n"
+            "I'm your personal AI therapist - here to give you direct, "
+            "honest support without the corporate disclaimers.\n\n"
+            "What's on your mind today? 💙"
+        )
+    else:
+        await update.message.reply_text(WELCOME_MESSAGE)
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(HELP_MESSAGE, parse_mode="Markdown")
+
+async def cmd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show current mode status."""
+    user_id = update.effective_user.id
+    personal_mode = is_personal_mode(user_id)
+    
+    if personal_mode:
+        await update.message.reply_text(
+            "🔓 **Personal Mode: ACTIVE**\n\n"
+            "You have access to:\n"
+            "• Direct, honest advice\n"
+            "• No AI disclaimers\n"
+            "• Personal therapist experience\n"
+            "• Softer crisis handling\n\n"
+            f"User ID: `{user_id}`",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text(
+            "🔒 **Standard Mode: ACTIVE**\n\n"
+            "You're using the standard MindMate experience.\n\n"
+            f"User ID: `{user_id}`",
+            parse_mode="Markdown"
+        )
 
 async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -381,12 +468,22 @@ async def cmd_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     message = update.message.text
+    personal_mode = is_personal_mode(user_id)
     
-    # Crisis detection
+    # Crisis detection (still active in Personal Mode, but less aggressive)
     if detect_crisis(message):
         logger.warning(f"Crisis detected - user {user_id}")
-        await update.message.reply_text(CRISIS_RESPONSE, parse_mode="Markdown")
-        return
+        if personal_mode:
+            # In Personal Mode, still show resources but continue conversation
+            await update.message.reply_text(
+                "💙 I hear you, and I'm here for you. If you're in immediate danger, "
+                "please reach out: SADAG 0800 567 567 (24/7)\n\n"
+                "Now, tell me more about what's going on...",
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text(CRISIS_RESPONSE, parse_mode="Markdown")
+            return
     
     if not openai_client:
         await update.message.reply_text("I'm temporarily unavailable. Please try again later.")
@@ -397,12 +494,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await handle_blind_test_message(update, user_id, message)
         return
     
-    # Normal mode
+    # Select system prompt based on mode
+    system_prompt = PERSONAL_MODE_PROMPT if personal_mode else SYSTEM_PROMPT
     current_model = get_user_model(user_id)
-    logger.info(f"Message from user {user_id} using model {current_model}")
+    
+    mode_str = "PERSONAL" if personal_mode else "STANDARD"
+    logger.info(f"Message from user {user_id} [{mode_str}] using model {current_model}")
     
     try:
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages = [{"role": "system", "content": system_prompt}]
         messages.extend(get_history(user_id))
         messages.append({"role": "user", "content": message})
         
@@ -518,6 +618,7 @@ async def run_bot():
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("clear", cmd_clear))
+    app.add_handler(CommandHandler("mode", cmd_mode))
     app.add_handler(CommandHandler("model", cmd_model))
     app.add_handler(CommandHandler("test", cmd_test))
     app.add_handler(CommandHandler("rate", cmd_rate))
