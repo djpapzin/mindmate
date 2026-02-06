@@ -29,6 +29,11 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 PORT = int(os.getenv("PORT", 10000))
 MAX_HISTORY_LENGTH = 10
 
+# Webhook configuration
+# Set RENDER_EXTERNAL_URL in Render environment, or it will use polling as fallback
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")  # e.g., https://mindmate-dev.onrender.com
+USE_WEBHOOK = bool(RENDER_EXTERNAL_URL)
+
 # =============================================================================
 # Personal Mode Configuration
 # =============================================================================
@@ -214,18 +219,46 @@ def save_test_result(user_id: int, prompt: str, mapping: dict, ratings: dict) ->
 
 flask_app = Flask(__name__)
 
+# Global reference to the telegram application (set during bot startup)
+telegram_app = None
+
 @flask_app.route("/")
 def health():
     return jsonify({
         "status": "healthy", 
         "service": "mindmate-bot", 
         "bot_running": bot_running,
-        "instance_id": INSTANCE_ID
+        "instance_id": INSTANCE_ID,
+        "mode": "webhook" if USE_WEBHOOK else "polling"
     })
 
 @flask_app.route("/health")
 def health_simple():
     return "OK", 200
+
+@flask_app.route("/webhook", methods=["POST"])
+def webhook():
+    """Handle incoming Telegram webhook updates."""
+    from flask import request
+    import json
+    
+    if telegram_app is None:
+        logger.error("Telegram app not initialized")
+        return "Error", 500
+    
+    try:
+        update_data = request.get_json(force=True)
+        update = Update.de_json(update_data, telegram_app.bot)
+        
+        # Process the update asynchronously
+        asyncio.run_coroutine_threadsafe(
+            telegram_app.process_update(update),
+            asyncio.get_event_loop()
+        )
+        return "OK", 200
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return "Error", 500
 
 # =============================================================================
 # Conversation History
@@ -639,13 +672,14 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 # =============================================================================
 
 async def run_bot():
-    global bot_running
+    global bot_running, telegram_app
     
     if not TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not configured!")
         return
     
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    telegram_app = app  # Set global reference for webhook handler
     
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
@@ -662,16 +696,32 @@ async def run_bot():
     await app.initialize()
     await app.start()
     
-    # drop_pending_updates=True clears any stuck updates and prevents conflicts
-    logger.info(f"[{INSTANCE_ID}] Starting polling...")
-    try:
-        await app.updater.start_polling(
+    if USE_WEBHOOK:
+        # Webhook mode - no polling conflicts!
+        webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
+        logger.info(f"[{INSTANCE_ID}] Setting up webhook: {webhook_url}")
+        
+        # Delete any existing webhook first
+        await app.bot.delete_webhook(drop_pending_updates=True)
+        
+        # Set the new webhook
+        await app.bot.set_webhook(
+            url=webhook_url,
             allowed_updates=Update.ALL_TYPES,
             drop_pending_updates=True
         )
-    except Exception as e:
-        logger.error(f"[{INSTANCE_ID}] Polling error: {e}")
-        raise
+        logger.info(f"[{INSTANCE_ID}] ✅ Webhook set successfully!")
+    else:
+        # Polling mode (fallback for local development)
+        logger.info(f"[{INSTANCE_ID}] Starting polling (no RENDER_EXTERNAL_URL set)...")
+        try:
+            await app.updater.start_polling(
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True
+            )
+        except Exception as e:
+            logger.error(f"[{INSTANCE_ID}] Polling error: {e}")
+            raise
     
     bot_running = True
     logger.info(f"[{INSTANCE_ID}] ✅ Bot is running!")
