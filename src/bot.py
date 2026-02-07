@@ -803,6 +803,15 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     personal_mode = is_personal_mode(user_id)
     
     try:
+        # Check OpenAI client availability
+        if not openai_client:
+            logger.error(f"OpenAI client not initialized for user {user_id}")
+            await update.message.reply_text(
+                "❌ Voice service is temporarily unavailable. Please try again later.",
+                parse_mode="Markdown"
+            )
+            return
+        
         # Get voice file
         voice = update.message.voice or update.message.audio
         if not voice:
@@ -829,32 +838,68 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             transcribed_text = transcript.text
             logger.info(f"User {user_id} voice transcribed: {transcribed_text[:50]}...")
             
+            # Add detailed logging for debugging
+            logger.info(f"OpenAI client status: {openai_client is not None}")
+            logger.info(f"Transcription successful: {transcribed_text[:100]}...")
+            
             # Add transcription to history
-            await add_to_history(user_id, "user", transcribed_text)
+            add_to_history(user_id, "user", transcribed_text)
             
             # Get conversation history
-            history = await get_history(user_id)
+            history = get_history(user_id)
             
             # Generate response
-            messages = build_conversation(history, transcribed_text, personal_mode)
+            system_prompt = get_personal_mode_prompt(user_id) if personal_mode else SYSTEM_PROMPT
+            current_model = get_user_model(user_id)
             
-            response = client.chat.completions.create(
-                model=await get_user_model_preference(user_id),
+            messages = [{"role": "system", "content": system_prompt}]
+            messages.extend(history)
+            messages.append({"role": "user", "content": transcribed_text})
+            
+            response = openai_client.chat.completions.create(
+                model=current_model,
                 messages=messages,
-                max_tokens=500
+                max_tokens=500,
+                temperature=0.8,
+                presence_penalty=0.6,
+                frequency_penalty=0.3
             )
             
+            logger.info(f"Chat completion successful for user {user_id}")
+            
             response_text = response.choices[0].message.content
+            logger.info(f"Response text extracted: {response_text[:100]}...")
+            
+            # Validate response before proceeding
+            if not response_text:
+                logger.error(f"Empty response from OpenAI for user {user_id}")
+                await update.message.reply_text(
+                    "❌ I didn't get a proper response. Please try again.",
+                    parse_mode="Markdown"
+                )
+                return
             
             # Add response to history
-            await add_to_history(user_id, "assistant", response_text)
+            add_to_history(user_id, "assistant", response_text)
             
             # Generate voice response
+            logger.info(f"About to create TTS for user {user_id}")
             voice_response = openai_client.audio.speech.create(
                 model=VOICE_TTS_MODEL,
                 input=response_text,
                 voice="alloy"
             )
+            
+            logger.info(f"TTS creation successful for user {user_id}")
+            
+            # Validate voice response
+            if not voice_response:
+                logger.error(f"Failed to generate voice response for user {user_id}")
+                await update.message.reply_text(
+                    f"💬 **Text Response:**\n\n{response_text}",
+                    parse_mode="Markdown"
+                )
+                return
             
             # Create temporary file for TTS response
             with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as voice_file:
