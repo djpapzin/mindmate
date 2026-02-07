@@ -298,6 +298,22 @@ async def lifespan(app: FastAPI):
     else:
         telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
         
+        # Set bot commands menu for better UX
+        from telegram import BotCommand
+        commands = [
+            BotCommand("start", "🚀 Start conversation"),
+            BotCommand("help", "❓ Get help"),
+            BotCommand("mode", "🔓 Check mode"),
+            BotCommand("clear", "🧹 Clear history"),
+            BotCommand("model", "🧪 Test models"),
+        ]
+        
+        async def set_commands():
+            await telegram_app.bot.set_my_commands(commands)
+        
+        # Set bot commands for better UX
+        await set_commands()
+        
         # Register handlers
         telegram_app.add_handler(CommandHandler("start", cmd_start))
         telegram_app.add_handler(CommandHandler("help", cmd_help))
