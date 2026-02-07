@@ -464,6 +464,7 @@ Bot: I hear you're feeling anxious. Would you like to:
 - [x] Process and respond (text response)
 - [x] **Voice responses (text-to-speech)** ✅ **COMPLETED**
 - [ ] **Voice selection menu** (choose male/female/neutral voices)
+- [ ] **Transcription display** (show transcribed text to user for verification)
 - [ ] Voice speed/pitch controls
 - [ ] Voice emotion controls
 
@@ -685,6 +686,31 @@ else:
 ---
 
 ### 🎯 Quick Win Features (1-2 weeks each)
+
+#### Transcription Display 📝
+**Why:** Users want to verify what the bot understood from their voice messages
+**Timeline:** 1 week  
+**Priority:** P2 (Medium)
+
+**Implementation:**
+```python
+# Enhanced voice handler with transcription display
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # ... existing voice processing logic ...
+    
+    # Show transcribed text to user for verification
+    await update.message.reply_text(
+        f"🎤 **Voice Transcribed:**\n\n"
+        f"📝 {transcribed_text}\n\n"
+        f"🤖 **AI Response:**\n\n"
+        f"{response_text}\n\n"
+        f"_💭 *You can see exactly what I understood from your voice!*_",
+        parse_mode="Markdown"
+    )
+    
+    # Then generate and send voice response as usual
+    # ... existing TTS logic ...
+```
 
 #### Voice Selection Menu 🎛️
 **Why:** Users want to choose bot voice personality (currently female only)
