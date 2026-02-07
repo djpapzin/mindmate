@@ -370,6 +370,7 @@ async def health():
     }
 
 @fastapi_app.get("/health")
+@fastapi_app.head("/health")
 async def health():
     """Enhanced health check for uptime monitoring"""
     return {
