@@ -850,7 +850,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await add_to_history(user_id, "assistant", response_text)
             
             # Generate voice response
-            voice_response = async_client.audio.speech.create(
+            voice_response = openai_client.audio.speech.create(
                 model=VOICE_TTS_MODEL,
                 input=response_text,
                 voice="alloy"
