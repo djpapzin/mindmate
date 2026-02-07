@@ -817,10 +817,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await voice_file.download_to_drive(temp_file.name)
             
             # Transcribe voice to text
-            client = OpenAI(api_key=OPENAI_API_KEY)
+            from openai import AsyncOpenAI
+            async_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
             
             with open(temp_file.name, "rb") as audio_file:
-                transcript = client.audio.transcriptions.create(
+                transcript = await async_client.audio.transcriptions.create(
                     model=VOICE_TRANSCRIPTION_MODEL,
                     file=audio_file
                 )
@@ -849,7 +850,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await add_to_history(user_id, "assistant", response_text)
             
             # Generate voice response
-            voice_response = client.audio.speech.create(
+            voice_response = await async_client.audio.speech.create(
                 model=VOICE_TTS_MODEL,
                 input=response_text,
                 voice="alloy"
