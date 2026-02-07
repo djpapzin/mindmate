@@ -22,6 +22,7 @@
 | 🚨 **Crisis Detection** | Automatic detection with SA helpline resources (SADAG) |
 | 📝 **Context Memory** | Remembers last 10 messages per conversation |
 | 🔓 **Personal Mode** | Premium experience with direct advice (no disclaimers) |
+| 🎛️ **Voice Messages** | Send voice notes → bot responds with voice ✅ **COMPLETED** |
 | 🧪 **A/B Testing** | Built-in model comparison tools |
 | ⚡ **FastAPI Backend** | Modern async architecture with webhooks |
 
@@ -36,6 +37,7 @@
 | `/test` | Start blind model comparison |
 | `/rate` | Rate responses in blind test |
 | `/results` | View blind test results |
+| `/voice` | Choose voice personality (coming soon) |
 
 ---
 

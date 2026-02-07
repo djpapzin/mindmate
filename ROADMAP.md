@@ -305,6 +305,7 @@ Configurable areas the bot specializes in for each user:
 | **Chat** | `gpt-4o-mini` | 117 EQ (89th percentile), 4.19/5 therapy rating, $0.02/100 chats |
 | **Voice Input** | `whisper-1` | Fastest (857ms), most reliable |
 | **Voice Output** | `tts-1` | Natural, human-like, $0.015/min |
+| **Voice Selection** | `tts-1` with 6 voices (alloy, echo, fable, onyx, nova, shimmer) | Choose personality: alloy (balanced), echo (male), fable (warm), onyx (deep), nova (friendly), shimmer (gentle) |
 
 #### ❌ Models to Avoid
 
@@ -362,6 +363,7 @@ max_tokens = 600
 | No user profiles | Can't remember preferences | Personal Mode |
 | Text only | Can't process voice messages | Voice support |
 | Generic responses | Same for all users | Personalization |
+| **Female voice only** | Users can't choose voice gender | **Voice selection menu** |
 
 ---
 
@@ -458,9 +460,12 @@ Bot: I hear you're feeling anxious. Would you like to:
 **Goal:** Expand accessibility and capabilities
 
 #### Voice Support 🎤
-- [ ] Transcribe voice messages to text
-- [ ] Process and respond (text response)
-- [ ] Future: Voice responses (text-to-speech)
+- [x] Transcribe voice messages to text
+- [x] Process and respond (text response)
+- [x] **Voice responses (text-to-speech)** ✅ **COMPLETED**
+- [ ] **Voice selection menu** (choose male/female/neutral voices)
+- [ ] Voice speed/pitch controls
+- [ ] Voice emotion controls
 
 #### Multi-Language 🌍
 | Language | Priority | Notes |
@@ -680,6 +685,45 @@ else:
 ---
 
 ### 🎯 Quick Win Features (1-2 weeks each)
+
+#### Voice Selection Menu 🎛️
+**Why:** Users want to choose bot voice personality (currently female only)
+**Timeline:** 1 week
+**Priority:** P2 (Medium)
+
+**Implementation:**
+```python
+# Voice selection command
+async def cmd_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show voice selection menu"""
+    
+    voices = [
+        ("alloy", "⚖️ Balanced (Current)"),
+        ("echo", "👨 Male"),
+        ("fable", "👩 Warm"),
+        ("onyx", "🎭 Deep"),
+        ("nova", "🌟 Friendly"),
+        ("shimmer", "✨ Gentle")
+    ]
+    
+    keyboard = [[InlineKeyboardButton(f"{name} {emoji}", callback_data=f"voice:{voice_id}")] 
+               for voice_id, (name, emoji) in voices]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard, rows=2)
+    
+    await update.message.reply_text(
+        "🎛️ **Choose Voice Personality:**\n\n"
+        "Current voice affects how I sound in voice messages.\n\n"
+        "Each voice has unique characteristics:\n"
+        "⚖️ **alloy** - Balanced, neutral\n"
+        "👨 **echo** - Male, confident\n"
+        "👩 **fable** - Warm, caring\n"
+        "🎭 **onyx** - Deep, thoughtful\n"
+        "🌟 **nova** - Friendly, upbeat\n"
+        "✨ **shimmer** - Gentle, soft\n",
+        reply_markup=reply_markup
+    )
+```
 
 #### Voice Message Support 🎤
 **Why:** Many users prefer speaking over typing, especially when emotional
