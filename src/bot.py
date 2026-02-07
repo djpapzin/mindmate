@@ -370,8 +370,27 @@ async def health():
     }
 
 @fastapi_app.get("/health")
-async def health_simple():
-    return {"status": "ok"}
+async def health():
+    """Enhanced health check for uptime monitoring"""
+    return {
+        "status": "healthy",
+        "service": "mindmate-bot",
+        "instance_id": INSTANCE_ID,
+        "mode": "webhook" if USE_WEBHOOK else "polling",
+        "uptime": "operational",
+        "version": "1.2.0",
+        "features": {
+            "voice": True,
+            "personal_mode": True,
+            "crisis_detection": True,
+            "webhook": USE_WEBHOOK
+        },
+        "endpoints": {
+            "webhook": "/webhook",
+            "health": "/health",
+            "root": "/"
+        }
+    }
 
 @fastapi_app.post("/webhook")
 async def webhook(request: Request):
