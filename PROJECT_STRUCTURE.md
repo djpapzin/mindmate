@@ -16,7 +16,10 @@ mindmate/
 ├── 📄 .gitignore             # Git ignore patterns
 ├── 📚 docs/                  # Documentation
 │   ├── ARCHITECTURE.md      # System design
-│   └── POSTGRESQL_INTEGRATION_CHECKLIST.md
+│   ├── POSTGRESQL_INTEGRATION_CHECKLIST.md
+│   └── 📁 voice/             # Voice feature documentation
+│       ├── VOICE_ERROR_ANALYSIS.md      # Voice debugging and fixes
+│       └── VOICE_IMPLEMENTATION_TODO.md   # Voice implementation checklist
 ├── 🔬 research/               # Research findings
 │   ├── MODEL_RESEARCH_FINDINGS.md
 │   ├── CHATGPT_RESEARCH_FINDINGS.md
@@ -96,8 +99,8 @@ pydantic                        # Data validation
 - **OPENAI_DIRECT_AUDIO_RESEARCH.md**: Direct audio-to-audio model research
 
 ### 📝 Implementation Docs
-- **VOICE_IMPLEMENTATION_TODO.md**: Voice feature implementation checklist
-- **VOICE_ERROR_ANALYSIS.md**: Voice debugging and fixes
+- **VOICE_IMPLEMENTATION_TODO.md**: Voice feature implementation checklist → **docs/voice/**
+- **VOICE_ERROR_ANALYSIS.md**: Voice debugging and fixes → **docs/voice/**
 
 ## 🎯 Current Status
 
