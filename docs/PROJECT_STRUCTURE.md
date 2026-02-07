@@ -16,6 +16,7 @@ mindmate/
 ├── 📄 .gitignore             # Git ignore patterns
 ├── 📚 docs/                  # Documentation
 │   ├── ARCHITECTURE.md      # System design
+│   ├── PERSONAL_MODE_UPDATE.md # Personal mode documentation
 │   ├── POSTGRESQL_INTEGRATION_CHECKLIST.md
 │   ├── PROJECT_STRUCTURE.md   # Project structure
 │   ├── ROADMAP.md             # Feature planning and timeline
