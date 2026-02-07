@@ -240,8 +240,8 @@ AVAILABLE_MODELS = {
 DEFAULT_MODEL = "gpt-4o-mini"
 
 # Voice Configuration
-VOICE_TRANSCRIPTION_MODEL = "whisper-1"
-VOICE_TTS_MODEL = "tts-1"
+VOICE_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
+VOICE_TTS_MODEL = "gpt-4o-mini-tts"
 
 # Blind test models (the 3 we're comparing)
 BLIND_TEST_MODELS = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-5.2"]

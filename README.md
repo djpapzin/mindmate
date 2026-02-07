@@ -22,7 +22,7 @@
 | 🚨 **Crisis Detection** | Automatic detection with SA helpline resources (SADAG) |
 | 📝 **Context Memory** | Remembers last 10 messages per conversation |
 | 🔓 **Personal Mode** | Premium experience with direct advice (no disclaimers) |
-| 🎛️ **Voice Messages** | Send voice notes → bot responds with voice ✅ **COMPLETED** |
+| 🎛️ **Voice Messages** | Send voice notes → bot responds with voice (Hybrid Audio Models) ✅ **COMPLETED** |
 | 🧪 **A/B Testing** | Built-in model comparison tools |
 | ⚡ **FastAPI Backend** | Modern async architecture with webhooks |
 
@@ -71,6 +71,7 @@ A private, unfiltered AI therapist experience for authorized users.
 | **Framework** | FastAPI + Uvicorn |
 | **Bot Library** | python-telegram-bot 21.0 |
 | **AI** | OpenAI GPT-4o-mini |
+| **Voice** | Hybrid Audio Models (gpt-4o-mini-transcribe + gpt-4o-mini-tts) |
 | **Hosting** | Render (free tier) |
 | **Uptime** | UptimeRobot |
 
