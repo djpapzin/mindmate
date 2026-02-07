@@ -850,7 +850,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await add_to_history(user_id, "assistant", response_text)
             
             # Generate voice response
-            voice_response = await async_client.audio.speech.create(
+            voice_response = async_client.audio.speech.create(
                 model=VOICE_TTS_MODEL,
                 input=response_text,
                 voice="alloy"
@@ -859,7 +859,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             # Create temporary file for TTS response
             with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as voice_file:
                 # Run synchronous stream_to_file in executor to avoid blocking
-                import asyncio
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, voice_response.stream_to_file, voice_file.name)
                 
