@@ -17,6 +17,8 @@ mindmate/
 ├── 📚 docs/                  # Documentation
 │   ├── ARCHITECTURE.md      # System design
 │   ├── POSTGRESQL_INTEGRATION_CHECKLIST.md
+│   ├── PROJECT_STRUCTURE.md   # Project structure
+│   ├── ROADMAP.md             # Feature planning and timeline
 │   └── 📁 voice/             # Voice feature documentation
 │       └── VOICE_IMPLEMENTATION_TODO.md   # Voice implementation checklist
 ├── 🔬 research/               # Research findings
