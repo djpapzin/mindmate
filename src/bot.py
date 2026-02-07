@@ -6,6 +6,7 @@ A compassionate chatbot providing 24/7 mental wellness support.
 import asyncio
 import logging
 import os
+import tempfile
 import uuid
 from contextlib import asynccontextmanager
 
@@ -238,6 +239,10 @@ AVAILABLE_MODELS = {
 }
 DEFAULT_MODEL = "gpt-4o-mini"
 
+# Voice Configuration
+VOICE_TRANSCRIPTION_MODEL = "whisper-1"
+VOICE_TTS_MODEL = "tts-1"
+
 # Blind test models (the 3 we're comparing)
 BLIND_TEST_MODELS = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-5.2"]
 
@@ -323,6 +328,7 @@ async def lifespan(app: FastAPI):
         telegram_app.add_handler(CommandHandler("test", cmd_test))
         telegram_app.add_handler(CommandHandler("rate", cmd_rate))
         telegram_app.add_handler(CommandHandler("results", cmd_results))
+        telegram_app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
         telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         telegram_app.add_error_handler(error_handler)
         
@@ -790,6 +796,91 @@ async def handle_blind_test_message(update: Update, user_id: int, message: str) 
         await update.message.reply_text(test_response, parse_mode="Markdown")
     
     logger.info(f"Blind test responses sent to user {user_id}")
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle voice messages - transcribe and respond with voice."""
+    user_id = update.effective_user.id
+    personal_mode = is_personal_mode(user_id)
+    
+    try:
+        # Get voice file
+        voice = update.message.voice or update.message.audio
+        if not voice:
+            await update.message.reply_text("❌ Please send a voice message.")
+            return
+        
+        # Download voice file
+        voice_file = await context.bot.get_file(voice.file_id)
+        
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp_file:
+            await voice_file.download_to_drive(temp_file.name)
+            
+            # Transcribe voice to text
+            client = OpenAI(api_key=OPENAI_API_KEY)
+            
+            with open(temp_file.name, "rb") as audio_file:
+                transcript = client.audio.transcriptions.create(
+                    model=VOICE_TRANSCRIPTION_MODEL,
+                    file=audio_file
+                )
+            
+            transcribed_text = transcript.text
+            logger.info(f"User {user_id} voice transcribed: {transcribed_text[:50]}...")
+            
+            # Add transcription to history
+            await add_to_history(user_id, "user", transcribed_text)
+            
+            # Get conversation history
+            history = await get_history(user_id)
+            
+            # Generate response
+            messages = build_conversation(history, transcribed_text, personal_mode)
+            
+            response = client.chat.completions.create(
+                model=await get_user_model_preference(user_id),
+                messages=messages,
+                max_tokens=500
+            )
+            
+            response_text = response.choices[0].message.content
+            
+            # Add response to history
+            await add_to_history(user_id, "assistant", response_text)
+            
+            # Generate voice response
+            voice_response = client.audio.speech.create(
+                model=VOICE_TTS_MODEL,
+                input=response_text,
+                voice="alloy"
+            )
+            
+            # Create temporary file for TTS response
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as voice_file:
+                voice_response.stream_to_file(voice_file.name)
+                
+                # Send voice response with text caption
+                with open(voice_file.name, "rb") as audio_file:
+                    await update.message.reply_voice(
+                        voice=audio_file,
+                        caption=f"🎤 **Voice Response:**\n\n{response_text}",
+                        parse_mode="Markdown"
+                    )
+            
+            logger.info(f"Voice response sent to user {user_id}")
+            
+    except OpenAIError as e:
+        logger.error(f"OpenAI error processing voice for user {user_id}: {e}")
+        await update.message.reply_text(
+            "❌ Sorry, I had trouble processing your voice message. Please try again.",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"Error processing voice for user {user_id}: {e}")
+        await update.message.reply_text(
+            "❌ Sorry, I had trouble processing your voice message. Please try again.",
+            parse_mode="Markdown"
+        )
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error(f"Bot error: {context.error}")
