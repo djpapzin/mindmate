@@ -857,7 +857,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             
             # Create temporary file for TTS response
             with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as voice_file:
-                voice_response.stream_to_file(voice_file.name)
+                # Run synchronous stream_to_file in executor to avoid blocking
+                import asyncio
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, voice_response.stream_to_file, voice_file.name)
                 
                 # Send voice response with text caption
                 with open(voice_file.name, "rb") as audio_file:
