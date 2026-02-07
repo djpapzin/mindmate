@@ -1,7 +1,8 @@
 """
 MindMate Bot Test Script
 Tests core functionality without needing Telegram
-Run: python test_bot.py
+Updated: 2026-02-07 - Voice feature is FULLY OPERATIONAL
+Run: python scripts/test_bot.py
 """
 
 import sys
