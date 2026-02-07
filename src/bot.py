@@ -405,7 +405,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     personal_mode = is_personal_mode(user_id)
     logger.info(f"User {user_id} started bot [{'PERSONAL' if personal_mode else 'STANDARD'}]")
-    clear_history(user_id)
     
     if personal_mode:
         await update.message.reply_text(
