@@ -26,7 +26,7 @@ mindmate/
 │   ├── GEMINI_RESEARCH_FINDINGS.md
 │   └── OPENAI_DIRECT_AUDIO_RESEARCH.md
 ├── 📝 scripts/               # Utility scripts
-│   └── test_bot.py        # Bot testing utilities
+│   └── test_voice.py        # Voice testing utilities
 ├── 📊 logs/                  # Application logs
 └── 🗂️ .windsurf/           # IDE configuration
 ```
