@@ -18,7 +18,6 @@ mindmate/
 │   ├── ARCHITECTURE.md      # System design
 │   ├── POSTGRESQL_INTEGRATION_CHECKLIST.md
 │   └── 📁 voice/             # Voice feature documentation
-│       ├── VOICE_ERROR_ANALYSIS.md      # Voice debugging and fixes
 │       └── VOICE_IMPLEMENTATION_TODO.md   # Voice implementation checklist
 ├── 🔬 research/               # Research findings
 │   ├── MODEL_RESEARCH_FINDINGS.md
