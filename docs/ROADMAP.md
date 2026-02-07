@@ -22,6 +22,8 @@ Available on **Telegram and WhatsApp**, with a **Premium Personal Mode** that ac
 | 🧪 **A/B Testing Tools** | `/test`, `/rate`, `/results` commands | Feb 2026 |
 | 📊 **Automated Blind Test** | `run_blind_test.py` script | Feb 2026 |
 | 🎯 **User Context** | Name, location, focus areas in prompt | Feb 2026 |
+| 🎛️ **Voice Messages** | Send/receive voice notes with hybrid audio models | Feb 2026 |
+| 💰 **Voice Cost Optimization** | 14% reduction in voice processing costs | Feb 2026 |
 
 ---
 
