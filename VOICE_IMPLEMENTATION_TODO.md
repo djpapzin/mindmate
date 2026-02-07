@@ -103,10 +103,23 @@ User sends voice → Download → Whisper transcribes → GPT-4o-mini processes 
   - [ ] Show transcribed text to user for verification
   - [ ] Display before AI response
   - [ ] Include both text and voice response
+  - [ ] Add user feedback option for transcription accuracy
 - [ ] **Voice Selection Menu** (P2 - 1 week)
   - [ ] Choose from 6 voices (alloy, echo, fable, onyx, nova, shimmer)
   - [ ] Inline keyboard for voice selection
   - [ ] Persist user voice preferences
+  - [ ] Add voice preview samples
+
+## 🎯 Phase 9: Advanced Voice Features (Future)
+- [ ] **Voice Speed Controls** (P3 - 2 weeks)
+  - [ ] Adjustable playback speed (0.5x - 2.0x)
+  - [ ] User preference persistence
+- [ ] **Voice Emotion Controls** (P3 - 2 weeks)
+  - [ ] Happy, sad, excited, calm modes
+  - [ ] Context-aware emotion detection
+- [ ] **Voice Language Support** (P2 - 3 weeks)
+  - [ ] Multi-language TTS capabilities
+  - [ ] Language auto-detection from transcription
 
 ## 📊 Success Criteria
 - ✅ Voice messages are successfully transcribed
