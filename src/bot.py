@@ -261,7 +261,7 @@ human_test_active: dict[int, bool] = {}
 human_test_prompts: dict[int, list] = []  # Predefined test prompts
 human_test_current: dict[int, int] = {}  # Current prompt index
 human_test_responses: dict[int, dict] = {}  # Store responses for rating
-human_test_ratings: dict[int, list] = []  # Store all ratings
+human_test_ratings: dict[int, list] = {}  # Store all ratings
 
 def get_user_model(user_id: int) -> str:
     """Get the model selected by user, or default."""
