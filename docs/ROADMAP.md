@@ -22,8 +22,9 @@ Available on **Telegram and WhatsApp**, with a **Premium Personal Mode** that ac
 | 🧪 **A/B Testing Tools** | `/test`, `/rate`, `/results` commands | Feb 2026 |
 | 📊 **Automated Blind Test** | `run_blind_test.py` script | Feb 2026 |
 | 🎯 **User Context** | Name, location, focus areas in prompt | Feb 2026 |
-| 🎛️ **Voice Messages** | Send/receive voice notes with hybrid audio models | Feb 2026 |
+| 🎛️ **Voice Messages** | Send/receive voice notes with smart caption handling | Feb 2026 |
 | 💰 **Voice Cost Optimization** | 14% reduction in voice processing costs | Feb 2026 |
+| 🔧 **Voice Caption Fix** | Smart splitting for long responses (Telegram 1024 limit) | Feb 2026 |
 
 ---
 
@@ -305,9 +306,9 @@ Configurable areas the bot specializes in for each user:
 | Purpose | Model | Why |
 |---------|-------|-----|
 | **Chat** | `gpt-4o-mini` | 117 EQ (89th percentile), 4.19/5 therapy rating, $0.02/100 chats |
-| **Voice Input** | `whisper-1` | Fastest (857ms), most reliable |
-| **Voice Output** | `tts-1` | Natural, human-like, $0.015/min |
-| **Voice Selection** | `tts-1` with 6 voices (alloy, echo, fable, onyx, nova, shimmer) | Choose personality: alloy (balanced), echo (male), fable (warm), onyx (deep), nova (friendly), shimmer (gentle) |
+| **Voice Input** | `gpt-4o-mini-transcribe` | Latest GPT-4o mini based, better accuracy than Whisper v1/v3 |
+| **Voice Output** | `gpt-4o-mini-tts` | Most reliable TTS, supports 13 voices, emotional range |
+| **Voice Selection** | `gpt-4o-mini-tts` with 13 voices (alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer, verse, marin, cedar) | Choose personality: alloy (balanced), marin/cedar (best quality) |
 
 #### ❌ Models to Avoid
 
