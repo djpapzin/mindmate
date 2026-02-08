@@ -34,9 +34,6 @@
 | `/help` | Show available commands |
 | `/mode` | Check your mode (Standard/Personal) |
 | `/model` | Switch AI models for A/B testing |
-| `/test` | Start blind model comparison |
-| `/rate` | Rate responses in blind test |
-| `/results` | View blind test results |
 | `/voice` | Choose voice personality (coming soon) |
 
 ---
@@ -146,19 +143,11 @@ RENDER_EXTERNAL_URL=https://your-app.onrender.com  # Optional: enables webhooks
 
 ## 🧪 A/B Model Testing
 
-Built-in blind testing to compare AI models:
-
-```
-1. /test              → Start blind test
-2. Send a message     → Get 3 responses (A, B, C)
-3. /rate A:4 B:5 C:3  → Rate each response
-4. Repeat 10-20x
-5. /results           → See winner!
-```
+Automated testing to compare AI models via `research/run_blind_test.py`:
 
 **Models Available:** GPT-4o-mini, GPT-4.1-mini, GPT-5.2
 
-Automated testing script: `research/run_blind_test.py`
+The automated testing script runs comprehensive comparisons and generates performance reports.
 
 ---
 

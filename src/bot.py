@@ -247,15 +247,6 @@ DEFAULT_MODEL = "gpt-4o-mini"
 VOICE_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 VOICE_TTS_MODEL = "gpt-4o-mini-tts"
 
-# Blind test models (the 3 we're comparing)
-BLIND_TEST_MODELS = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-5.2"]
-
-# Blind test state
-import random
-blind_test_active: dict[int, bool] = {}
-blind_test_results: dict[int, list[dict]] = {}  # Store test results per user
-current_test_mapping: dict[int, dict[str, str]] = {}  # Maps A/B/C to actual models
-
 
 def get_user_model(user_id: int) -> str:
     """Get the model selected by user, or default."""
@@ -265,25 +256,6 @@ def set_user_model(user_id: int, model: str) -> None:
     """Set the model for a user."""
     user_model_selection[user_id] = model
 
-def is_blind_test_active(user_id: int) -> bool:
-    """Check if user is in blind test mode."""
-    return blind_test_active.get(user_id, False)
-
-def start_blind_test(user_id: int) -> None:
-    """Start blind test for user."""
-    blind_test_active[user_id] = True
-    blind_test_results[user_id] = []
-    
-
-def save_test_result(user_id: int, prompt: str, mapping: dict, ratings: dict) -> None:
-    """Save a test result."""
-    if user_id not in blind_test_results:
-        blind_test_results[user_id] = []
-    blind_test_results[user_id].append({
-        "prompt": prompt,
-        "mapping": mapping,  # {"A": "gpt-4o-mini", "B": "gpt-4.1-mini", ...}
-        "ratings": ratings,  # {"A": 4, "B": 5, "C": 3}
-    })
 
 # =============================================================================
 # FastAPI App
@@ -327,7 +299,6 @@ async def lifespan(app: FastAPI):
         telegram_app.add_handler(CommandHandler("clear", cmd_clear))
         telegram_app.add_handler(CommandHandler("mode", cmd_mode))
         telegram_app.add_handler(CommandHandler("model", cmd_model))
-        telegram_app.add_handler(CommandHandler("done", cmd_done))
         telegram_app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
         telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         telegram_app.add_error_handler(error_handler)
@@ -531,119 +502,6 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
 
-async def cmd_rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Rate the current response in human test mode or blind test mode."""
-    user_id = update.effective_user.id
-    args = context.args
-    
-    # No human testing - using automated testing only
-    
-    # Original blind test rating logic
-    if not is_blind_test_active(user_id):
-        await update.message.reply_text("❌ No active test. Use `/test` to start.", parse_mode="Markdown")
-        return
-    
-    if user_id not in current_test_mapping or not current_test_mapping[user_id]:
-        await update.message.reply_text("❌ No responses to rate yet. Send a test message first!")
-        return
-    
-    if not args:
-        await update.message.reply_text(
-            "📊 **Rate the responses (1-5):**\n\n"
-            "`/rate A:4 B:5 C:3`\n\n"
-            "1 = Poor, 5 = Excellent",
-            parse_mode="Markdown"
-        )
-        return
-    
-    # Parse ratings like "A:4 B:5 C:3"
-    ratings = {}
-    try:
-        for arg in args:
-            parts = arg.upper().split(":")
-            if len(parts) == 2:
-                letter = parts[0]
-                score = int(parts[1])
-                if letter in ["A", "B", "C"] and 1 <= score <= 5:
-                    ratings[letter] = score
-    except ValueError:
-        pass
-    
-    if len(ratings) != 3:
-        await update.message.reply_text(
-            "❌ Please rate all 3 responses.\n\n"
-            "Example: `/rate A:4 B:5 C:3`",
-            parse_mode="Markdown"
-        )
-        return
-    
-    # Save the result
-    mapping = current_test_mapping[user_id]
-    prompt = mapping.get("_prompt", "Unknown")
-    save_test_result(user_id, prompt, mapping, ratings)
-    current_test_mapping[user_id] = {}  # Clear for next test
-    
-    test_count = len(blind_test_results.get(user_id, []))
-    await update.message.reply_text(
-        f"✅ **Ratings saved!** ({test_count} tests completed)\n\n"
-        f"🅰️ = {ratings.get('A')} | 🅱️ = {ratings.get('B')} | 🅲️ = {ratings.get('C')}\n\n"
-        f"📝 Send another test message, or `/results` when done.",
-        parse_mode="Markdown"
-    )
-
-async def cmd_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show blind test results and reveal models."""
-    user_id = update.effective_user.id
-    
-    results = blind_test_results.get(user_id, [])
-    if not results:
-        await update.message.reply_text("❌ No test results yet. Use `/test` to start testing.")
-        return
-    
-    # Calculate scores per model
-    model_scores: dict[str, list[int]] = {m: [] for m in BLIND_TEST_MODELS}
-    
-    for result in results:
-        mapping = result["mapping"]
-        ratings = result["ratings"]
-        for letter, score in ratings.items():
-            model = mapping.get(letter)
-            if model and model in model_scores:
-                model_scores[model].append(score)
-    
-    # Calculate averages
-    model_averages = {}
-    for model, scores in model_scores.items():
-        if scores:
-            model_averages[model] = sum(scores) / len(scores)
-        else:
-            model_averages[model] = 0
-    
-    # Sort by average score
-    sorted_models = sorted(model_averages.items(), key=lambda x: x[1], reverse=True)
-    
-    # Build results message
-    results_text = "🏆 **BLIND TEST RESULTS**\n\n"
-    results_text += f"**Total tests:** {len(results)}\n\n"
-    results_text += "**Rankings:**\n"
-    
-    medals = ["🥇", "🥈", "🥉"]
-    for i, (model, avg) in enumerate(sorted_models):
-        medal = medals[i] if i < 3 else "  "
-        scores = model_scores[model]
-        results_text += f"{medal} **{model}**\n"
-        results_text += f"   Avg: {avg:.2f}/5 ({len(scores)} ratings)\n\n"
-    
-    # Winner recommendation
-    winner = sorted_models[0][0] if sorted_models else "Unknown"
-    results_text += f"🎯 **Recommended model:** `{winner}`\n\n"
-    results_text += "_Test ended. Use `/test` to start a new test._"
-    
-    # End the test
-    stop_blind_test(user_id)
-    
-    await update.message.reply_text(results_text, parse_mode="Markdown")
-
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Deduplicate messages to prevent double responses during deployments
     message_id = update.message.message_id
@@ -684,11 +542,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     
     
-    # Check if in blind test mode
-    if is_blind_test_active(user_id):
-        await handle_blind_test_message(update, user_id, message)
-        return
-    
     # Select system prompt based on mode
     system_prompt = get_personal_mode_prompt(user_id) if personal_mode else SYSTEM_PROMPT
     current_model = get_user_model(user_id)
@@ -724,75 +577,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error(f"Error: {e}")
         await update.message.reply_text("Something went wrong. Please try again.")
 
-
-async def handle_blind_test_message(update: Update, user_id: int, message: str) -> None:
-    logger.info(f"Blind test message from user {user_id}")
-    
-    await update.message.reply_text("🧪 _Testing 3 models... please wait..._", parse_mode="Markdown")
-    
-    # Prepare messages
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": message}
-    ]
-    
-    # Query all 3 models
-    responses = {}
-    for model in BLIND_TEST_MODELS:
-        try:
-            response = openai_client.chat.completions.create(
-                model=model,
-                messages=messages,
-                max_tokens=600,
-                temperature=0.8,
-                presence_penalty=0.6,
-                frequency_penalty=0.3
-            )
-            responses[model] = response.choices[0].message.content
-        except Exception as e:
-            logger.error(f"Error with model {model}: {e}")
-            responses[model] = f"[Error: Could not get response from {model}]"
-    
-    # Shuffle and assign A, B, C randomly
-    models = list(BLIND_TEST_MODELS)
-    random.shuffle(models)
-    
-    mapping = {
-        "A": models[0],
-        "B": models[1],
-        "C": models[2],
-        "_prompt": message  # Store the prompt too
-    }
-    current_test_mapping[user_id] = mapping
-    
-    # Build response with hidden model identities
-    test_response = f"📝 **Your prompt:** _{message}_\n\n"
-    test_response += "━━━━━━━━━━━━━━━━━━━━\n\n"
-    
-    test_response += f"🅰️ **Response A:**\n{responses[models[0]]}\n\n"
-    test_response += "━━━━━━━━━━━━━━━━━━━━\n\n"
-    
-    test_response += f"🅱️ **Response B:**\n{responses[models[1]]}\n\n"
-    test_response += "━━━━━━━━━━━━━━━━━━━━\n\n"
-    
-    test_response += f"🅲️ **Response C:**\n{responses[models[2]]}\n\n"
-    test_response += "━━━━━━━━━━━━━━━━━━━━\n\n"
-    
-    test_response += "📊 **Rate them:** `/rate A:4 B:5 C:3`\n"
-    test_response += "_(1 = Poor, 5 = Excellent)_"
-    
-    # Split if too long for Telegram (4096 char limit)
-    if len(test_response) > 4000:
-        # Send in parts
-        await update.message.reply_text(f"📝 **Your prompt:** _{message}_\n\n━━━━━━━━━━━━━━━━━━━━", parse_mode="Markdown")
-        await update.message.reply_text(f"🅰️ **Response A:**\n{responses[models[0]]}", parse_mode="Markdown")
-        await update.message.reply_text(f"🅱️ **Response B:**\n{responses[models[1]]}", parse_mode="Markdown")
-        await update.message.reply_text(f"🅲️ **Response C:**\n{responses[models[2]]}", parse_mode="Markdown")
-        await update.message.reply_text("📊 **Rate them:** `/rate A:4 B:5 C:3`\n_(1 = Poor, 5 = Excellent)_", parse_mode="Markdown")
-    else:
-        await update.message.reply_text(test_response, parse_mode="Markdown")
-    
-    logger.info(f"Blind test responses sent to user {user_id}")
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle voice messages - transcribe and respond with voice."""
