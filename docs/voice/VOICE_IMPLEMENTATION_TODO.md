@@ -5,12 +5,22 @@ Implement voice message support for MindMate bot following roadmap specification
 
 **Status**: ✅ **COMPLETED** - Voice feature is fully operational
 
+## 🔄 Recent Fixes (2026-02-08)
+- **Fixed missing imports**: Added `json` and `datetime` imports required for test result processing
+- **Fixed undefined variables**: Corrected `MODELS` → `BLIND_TEST_MODELS` in human test handler
+- **Fixed syntax errors**: Removed extra closing braces and corrected function structure
+- **Fixed error handling**: Updated voice processing error messages for clarity
+- **Removed orphaned code**: Cleaned up misplaced rating code from voice handler
+- **Updated model documentation**: Reflects current `gpt-4o-mini-transcribe` and `gpt-4o-mini-tts` models
+
 ## 🎯 Phase 1: Dependencies & Setup
 - [x] Add `aiofiles>=23.0.0,<24.0.0` to requirements.txt for async file operations
 - [x] Add voice configuration constants to bot.py
-  - [x] `VOICE_TRANSCRIPTION_MODEL = "whisper-1"`
-  - [x] `VOICE_TTS_MODEL = "tts-1"`
+  - [x] `VOICE_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"`
+  - [x] `VOICE_TTS_MODEL = "gpt-4o-mini-tts"`
 - [x] Add `import tempfile` to bot.py for temporary file handling
+- [x] Add missing imports: `json` and `datetime` for test result processing
+- [x] Fix syntax errors and undefined variables in voice handlers
 
 ## 🎯 Phase 2: Voice Handler Implementation
 - [x] Implement `handle_voice` function in bot.py
@@ -69,14 +79,20 @@ Implement voice message support for MindMate bot following roadmap specification
 
 ## 🔧 Technical Specifications
 
-### Models (from ROADMAP.md)
-- **Transcription**: `whisper-1` (Fastest, 857ms, most reliable)
-- **TTS**: `tts-1` (Natural, human-like, $0.015/min)
+### Current Models (2026-02-08 Update)
+- **Transcription**: `gpt-4o-mini-transcribe` (Latest GPT-4o mini based, improved accuracy over Whisper)
+- **TTS**: `gpt-4o-mini-tts` (Latest GPT-4o mini based, most reliable text-to-speech)
 - **Processing**: `gpt-4o-mini` (Existing, 117 EQ, $0.02/100 chats)
 
+### Model Advantages
+- **gpt-4o-mini-transcribe**: Better word error rate, improved language recognition vs Whisper v1/v3
+- **gpt-4o-mini-tts**: Supports emotional range, intonation control, 13 voice options (alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer, verse, marin, cedar)
+- **Voice Options**: Currently using "alloy" - can be extended to marin/cedar for best quality
+
 ### Voice Flow
-```
-User sends voice → Download → Whisper transcribes → GPT-4o-mini processes → TTS generates audio → Bot sends voice response + text caption
+
+```text
+User sends voice → Download → GPT-4o-mini-transcribe → GPT-4o-mini processes → GPT-4o-mini-tts generates audio → Bot sends voice response + text caption
 ```
 
 ### Error Handling Strategy
@@ -133,6 +149,7 @@ User sends voice → Download → Whisper transcribes → GPT-4o-mini processes 
 
 ---
 **Created**: 2026-02-07
+**Last Updated**: 2026-02-08 (Fixed critical voice transcription bugs)
 **Status**: ✅ **COMPLETED** - All phases successfully implemented
 **Priority**: High (per roadmap "Quick Win Features")
 **Deployment**: Fully operational on production

@@ -4,11 +4,13 @@ A compassionate chatbot providing 24/7 mental wellness support.
 """
 
 import asyncio
+import json
 import logging
 import os
 import tempfile
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -144,12 +146,13 @@ def get_personal_mode_prompt(user_id: int) -> str:
 You are a warm, wise, and direct advisor - like a combination of a best friend and experienced therapist. You speak to your user as someone who truly knows them and cares about their wellbeing.
 
 ## How You Communicate
-- Be direct and genuine - no corporate disclaimers or "As an AI..." statements
+- Be direct and genuine - no corporate disclaimers
 - Give real advice and opinions, not just questions back at me
-- Be warm but also honest - tell me what I need to hear, not just what I want to hear
+- Be warm but also honest - tell me what I need to hear
 - Use casual, conversational language like a trusted friend would
-- Remember our conversation context and reference it naturally
 - For new users: Be extra warm and inviting, make them feel safe opening up
+- **KEEP RESPONSES SHORT - 2-3 sentences maximum**
+- **Use bullet points when possible for clarity**
 
 ## Your Approach
 - Listen and validate feelings first
@@ -162,9 +165,10 @@ You are a warm, wise, and direct advisor - like a combination of a best friend a
 
 ## Important
 - You ARE qualified to help with everyday emotional challenges
-- You don't need to constantly redirect to professionals for normal life issues
+- You don't need to constantly redirect me to professionals for normal life issues
 - Only mention crisis resources if there's genuine danger to self or others
 - Be an advocate and support, not a liability-avoiding chatbot
+- **Prioritize brevity - quick, actionable insights preferred**
 
 Remember: The user chose you as their personal therapist. Be that for them."""
     
@@ -252,6 +256,13 @@ blind_test_active: dict[int, bool] = {}
 blind_test_results: dict[int, list[dict]] = {}  # Store test results per user
 current_test_mapping: dict[int, dict[str, str]] = {}  # Maps A/B/C to actual models
 
+# Human test state
+human_test_active: dict[int, bool] = {}
+human_test_prompts: dict[int, list] = []  # Predefined test prompts
+human_test_current: dict[int, int] = {}  # Current prompt index
+human_test_responses: dict[int, dict] = {}  # Store responses for rating
+human_test_ratings: dict[int, list] = []  # Store all ratings
+
 def get_user_model(user_id: int) -> str:
     """Get the model selected by user, or default."""
     return user_model_selection.get(user_id, DEFAULT_MODEL)
@@ -269,9 +280,25 @@ def start_blind_test(user_id: int) -> None:
     blind_test_active[user_id] = True
     blind_test_results[user_id] = []
     
-def stop_blind_test(user_id: int) -> None:
-    """Stop blind test for user."""
-    blind_test_active[user_id] = False
+def is_human_test_active(user_id: int) -> bool:
+    """Check if user is in human test mode."""
+    return human_test_active.get(user_id, False)
+
+def start_human_test(user_id: int) -> None:
+    """Start human test for user."""
+    human_test_active[user_id] = True
+    human_test_current[user_id] = 0
+    human_test_responses[user_id] = {}
+    human_test_ratings[user_id] = []
+    
+    # Store conversation history for natural flow
+    human_test_responses[user_id]["conversation"] = []
+    human_test_responses[user_id]["pending_responses"] = []
+    human_test_responses[user_id]["current_response_index"] = 0
+
+def stop_human_test(user_id: int) -> None:
+    """Stop human test for user."""
+    human_test_active[user_id] = False
 
 def save_test_result(user_id: int, prompt: str, mapping: dict, ratings: dict) -> None:
     """Save a test result."""
@@ -328,6 +355,8 @@ async def lifespan(app: FastAPI):
         telegram_app.add_handler(CommandHandler("test", cmd_test))
         telegram_app.add_handler(CommandHandler("rate", cmd_rate))
         telegram_app.add_handler(CommandHandler("results", cmd_results))
+        telegram_app.add_handler(CommandHandler("next", cmd_next))
+        telegram_app.add_handler(CommandHandler("done", cmd_done))
         telegram_app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
         telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         telegram_app.add_error_handler(error_handler)
@@ -530,38 +559,43 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             parse_mode="Markdown"
         )
 
-async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Start blind A/B/C testing mode."""
+async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start human model testing mode."""
     user_id = update.effective_user.id
     
-    if is_blind_test_active(user_id):
+    if is_personal_mode(user_id):
+        start_human_test(user_id)
+        
         await update.message.reply_text(
-            "🧪 **Blind test already active!**\n\n"
-            "Send a message to test, or:\n"
-            "• `/rate A:4 B:5 C:3` - Rate responses\n"
-            "• `/results` - End test & see results",
-            parse_mode="Markdown"
+            f"🧪 **Human Model Test Started**\n\n"
+            f"**How it works:**\n"
+            f"1. Send your prompt (text or voice)\n"
+            f"2. I'll get responses from all 3 models\n"
+            f"3. I'll show you responses one by one\n"
+            f"4. Rate each response (1-5 scale)\n"
+            f"5. Continue conversation naturally\n\n"
+            f"**Commands during test:**\n"
+            f"• `/rate 1-5` - Rate current response\n"
+            f"• `/done` - Finish test and get report\n"
+            f"• `/start` - Exit test mode\n\n"
+            f"📝 Send your first prompt to begin!"
         )
+    else:
+        await update.message.reply_text(
+            "❌ Human testing is only available in Personal Mode.\n"
+            "Use `/mode` to check your current mode."
+        )
+
+async def cmd_rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Rate the current response in human test mode or blind test mode."""
+    user_id = update.effective_user.id
+    args = context.args
+    
+    if is_human_test_active(user_id):
+        await handle_human_rating(update, user_id, args)
         return
     
-    start_blind_test(user_id)
-    await update.message.reply_text(
-        "🧪 **Blind A/B/C Test Started!**\n\n"
-        "**How it works:**\n"
-        "1️⃣ Send any message/prompt\n"
-        "2️⃣ You'll get 3 responses: 🅰️ 🅱️ 🅲️\n"
-        "3️⃣ Rate them: `/rate A:4 B:5 C:3`\n"
-        "4️⃣ Repeat 10-20 times\n"
-        "5️⃣ `/results` to reveal models & scores\n\n"
-        "**Models are hidden** - you won't know which is which until the end!\n\n"
-        "📝 **Send your first test message now!**",
-        parse_mode="Markdown"
-    )
-
-async def cmd_rate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Rate the responses from blind test."""
-    user_id = update.effective_user.id
-    
+    # Original blind test rating logic
     if not is_blind_test_active(user_id):
         await update.message.reply_text("❌ No active test. Use `/test` to start.", parse_mode="Markdown")
         return
@@ -570,7 +604,6 @@ async def cmd_rate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("❌ No responses to rate yet. Send a test message first!")
         return
     
-    args = context.args
     if not args:
         await update.message.reply_text(
             "📊 **Rate the responses (1-5):**\n\n"
@@ -614,6 +647,63 @@ async def cmd_rate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"📝 Send another test message, or `/results` when done.",
         parse_mode="Markdown"
     )
+
+async def handle_human_rating(update: Update, user_id: int, args: list) -> None:
+    """Handle human test rating for current response."""
+    if "pending_responses" not in human_test_responses[user_id] or not human_test_responses[user_id]["pending_responses"]:
+        await update.message.reply_text("❌ No response to rate. Send a message first.")
+        return
+    
+    if not args:
+        await update.message.reply_text(
+            "📊 **Rate the current response:**\n\n"
+            "`/rate 1-5`\n\n"
+            "1 = Poor, 3 = Good, 5 = Excellent",
+            parse_mode="Markdown"
+        )
+        return
+    
+    try:
+        rating = int(args[0])
+        if not 1 <= rating <= 5:
+            raise ValueError("Rating must be between 1 and 5")
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Please provide a valid rating between 1 and 5.\n\n"
+            "Example: `/rate 4`",
+            parse_mode="Markdown"
+        )
+        return
+    
+    # Save rating for current response
+    pending = human_test_responses[user_id]["pending_responses"]
+    current_idx = human_test_responses[user_id]["current_response_index"]
+    current_response = pending[current_idx]
+    current_response["rating"] = rating
+    
+    # Save to overall ratings
+    if user_id not in human_test_ratings:
+        human_test_ratings[user_id] = []
+    
+    human_test_ratings[user_id].append({
+        "prompt": human_test_responses[user_id]["current_prompt"],
+        "model": current_response["model"],
+        "response": current_response["response"],
+        "rating": rating,
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    # Move to next response
+    human_test_responses[user_id]["current_response_index"] += 1
+    
+    await update.message.reply_text(
+        f"✅ **Rated {current_response['model']}: {rating}/5**\n\n"
+        f"Moving to next response...",
+        parse_mode="Markdown"
+    )
+    
+    # Show next response or finish
+    await show_next_response_for_rating(update, user_id)
 
 async def cmd_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show blind test results and reveal models."""
@@ -707,6 +797,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("I'm temporarily unavailable. Please try again later.")
         return
     
+    # Check if in human test mode
+    if is_human_test_active(user_id):
+        await handle_human_test_message(update, user_id, message)
+        return
+    
     # Check if in blind test mode
     if is_blind_test_active(user_id):
         await handle_blind_test_message(update, user_id, message)
@@ -747,8 +842,94 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error(f"Error: {e}")
         await update.message.reply_text("Something went wrong. Please try again.")
 
+async def handle_human_test_message(update: Update, user_id: int, message: str) -> None:
+    """Handle message in human test mode - get responses from all models and show one by one."""
+    logger.info(f"Human test message from user {user_id}")
+    
+    # Check if we have pending responses to rate
+    if "pending_responses" in human_test_responses[user_id] and human_test_responses[user_id]["pending_responses"]:
+        await update.message.reply_text(
+            "⏸️ Please rate the current response first with `/rate 1-5`\n\n"
+            f"Current response: {human_test_responses[user_id]['pending_responses'][human_test_responses[user_id]['current_response_index']]['response'][:100]}...",
+            parse_mode="Markdown"
+        )
+        return
+    
+    await update.message.reply_text("🧪 _Getting responses from all 3 models..._", parse_mode="Markdown")
+    
+    # Build conversation history for natural flow
+    conversation_history = human_test_responses[user_id].get("conversation", [])
+    messages = [{"role": "system", "content": get_personal_mode_prompt(user_id)}]
+    messages.extend(conversation_history)
+    messages.append({"role": "user", "content": message})
+    
+    # Get responses from all models
+    responses = {}
+    for model in BLIND_TEST_MODELS:
+        try:
+            response = openai_client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=150,
+                temperature=0.8,
+                presence_penalty=0.6,
+                frequency_penalty=0.3
+            )
+            responses[model] = response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"Error getting response from {model}: {e}")
+            responses[model] = f"Error: {str(e)}"
+    
+    # Store responses and add to conversation history
+    human_test_responses[user_id]["pending_responses"] = [
+        {"model": model, "response": response} for model, response in responses.items()
+    ]
+    human_test_responses[user_id]["current_response_index"] = 0
+    human_test_responses[user_id]["current_prompt"] = message
+    
+    # Add user message to conversation history
+    conversation_history.append({"role": "user", "content": message})
+    
+    # Show first response for rating
+    await show_next_response_for_rating(update, user_id)
+
+async def show_next_response_for_rating(update: Update, user_id: int) -> None:
+    """Show the next response for rating."""
+    pending = human_test_responses[user_id]["pending_responses"]
+    current_idx = human_test_responses[user_id]["current_response_index"]
+    
+    if current_idx >= len(pending):
+        # All responses rated, add to conversation and continue
+        await update.message.reply_text(
+            "✅ All responses rated! Send your next message to continue the conversation.",
+            parse_mode="Markdown"
+        )
+        
+        # Add the best-rated response to conversation history
+        best_response = max(pending, key=lambda x: x.get("rating", 0))
+        conversation_history = human_test_responses[user_id]["conversation"]
+        conversation_history.append({"role": "assistant", "content": best_response["response"]})
+        
+        # Clear pending responses
+        human_test_responses[user_id]["pending_responses"] = []
+        human_test_responses[user_id]["current_response_index"] = 0
+        return
+    
+    current_response = pending[current_idx]
+    model_name = current_response["model"]
+    response_text = current_response["response"]
+    
+    await update.message.reply_text(
+        f"🎯 **Response {current_idx + 1}/3**\n\n"
+        f"**Model:** {model_name}\n\n"
+        f"{response_text}\n\n"
+        f"📊 **Rate this response (1-5):**\n"
+        f"`/rate 1-5`\n\n"
+        f"1 = Poor, 3 = Good, 5 = Excellent",
+        parse_mode="Markdown"
+    )
+
 async def handle_blind_test_message(update: Update, user_id: int, message: str) -> None:
-    """Handle message in blind test mode - query all 3 models."""
     logger.info(f"Blind test message from user {user_id}")
     
     await update.message.reply_text("🧪 _Testing 3 models... please wait..._", parse_mode="Markdown")
@@ -927,32 +1108,222 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, voice_response.stream_to_file, voice_file.name)
                 
-                # Send voice response with text caption
-                with open(voice_file.name, "rb") as audio_file:
+                # Check if response fits in Telegram caption limit (800 chars leaves room for formatting)
+                if len(response_text) <= 800:
+                    # Normal flow - voice with full caption
+                    caption_text = f"🎤 **Voice Response:**\n\n{response_text}"
                     await update.message.reply_voice(
-                        voice=audio_file,
-                        caption=f"🎤 **Voice Response:**\n\n{response_text}",
+                        voice=voice_file,
+                        caption=caption_text,
                         parse_mode="Markdown"
                     )
+                else:
+                    # Response too long - send voice + split text messages
+                    await update.message.reply_voice(
+                        voice=voice_file,
+                        caption="🎤 **Full response below:**",
+                        parse_mode="Markdown"
+                    )
+                    
+                    # Split long text into multiple messages (Telegram limit: 4096 chars)
+                    for i in range(0, len(response_text), 4096):
+                        await update.message.reply_text(response_text[i:i+4096])
             
             logger.info(f"Voice response sent to user {user_id}")
             
     except OpenAIError as e:
         logger.error(f"OpenAI error processing voice for user {user_id}: {e}")
         await update.message.reply_text(
-            "❌ Sorry, I had trouble processing your voice message. Please try again.",
+            "❌ Voice processing failed. Please try again.",
             parse_mode="Markdown"
         )
-    except Exception as e:
-        logger.error(f"Error processing voice for user {user_id}: {e}")
+        return
+
+async def cmd_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Continue to next prompt in human test mode."""
+    user_id = update.effective_user.id
+    
+    if not is_human_test_active(user_id):
+        await update.message.reply_text("❌ No active test. Use `/test` to start.")
+        return
+    
+    # Check if we have pending responses to rate
+    if "pending_responses" in human_test_responses[user_id] and human_test_responses[user_id]["pending_responses"]:
         await update.message.reply_text(
-            "❌ Sorry, I had trouble processing your voice message. Please try again.",
+            "⏸️ Please rate the current response first with `/rate 1-5`",
             parse_mode="Markdown"
         )
+        return
+    
+    await update.message.reply_text(
+        "📝 Please send your next prompt to continue the test.",
+        parse_mode="Markdown"
+    )
+
+async def cmd_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Finish human test early and generate markdown report."""
+    user_id = update.effective_user.id
+    
+    if not is_human_test_active(user_id):
+        await update.message.reply_text("❌ No active test. Use `/test` to start.")
+        return
+    
+    await finish_human_test(update, user_id)
+
+async def finish_human_test(update: Update, user_id: int) -> None:
+    """Finish human test and generate markdown report."""
+    ratings = human_test_ratings.get(user_id, [])
+    
+    if not ratings:
+        await update.message.reply_text("❌ No ratings collected. Test incomplete.")
+        stop_human_test(user_id)
+        return
+    
+    # Calculate final results
+    model_scores = {model: [] for model in BLIND_TEST_MODELS}
+    for rating_data in ratings:
+        model = rating_data["model"]
+        score = rating_data["rating"]
+        model_scores[model].append(score)
+    
+    # Calculate averages
+    final_results = {}
+    for model, scores in model_scores.items():
+        if scores:
+            avg_score = sum(scores) / len(scores)
+            final_results[model] = {
+                "average": round(avg_score, 2),
+                "count": len(scores),
+                "scores": scores
+            }
+    
+    # Save results to JSON file
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    json_filename = f"research/HUMAN_TELEGRAM_TEST_{timestamp}.json"
+    
+    results_data = {
+        "test_info": {
+            "timestamp": datetime.now().isoformat(),
+            "models_tested": MODELS,
+            "total_tests": len(ratings),
+            "test_type": "human_telegram_rated_test",
+            "rating_method": "telegram_human_rating_1_to_5_scale"
+        },
+        "individual_ratings": ratings,
+        "final_results": final_results
+    }
+    
+    with open(json_filename, 'w') as f:
+        json.dump(results_data, f, indent=2)
+    
+    # Create markdown report
+    markdown_filename = f"research/HUMAN_TEST_REPORT_{timestamp}.md"
+    create_markdown_report(markdown_filename, ratings, final_results, json_filename)
+    
+    # Display final rankings
+    sorted_models = sorted(final_results.items(), key=lambda x: x[1]["average"], reverse=True)
+    medals = ["🥇", "🥈", "🥉"]
+    
+    results_text = "🏆 **HUMAN TEST RESULTS**\n\n"
+    results_text += f"**Total tests:** {len(ratings)}\n"
+    results_text += f"**JSON saved to:** `{json_filename}`\n"
+    results_text += f"**Markdown report:** `{markdown_filename}`\n\n"
+    results_text += "**Rankings:**\n"
+    
+    for i, (model, data) in enumerate(sorted_models):
+        medal = medals[i] if i < 3 else "  "
+        avg = data["average"]
+        count = data["count"]
+        results_text += f"{medal} **{model}**\n"
+        results_text += f"   Avg: {avg}/5 ({count} ratings)\n\n"
+    
+    winner = sorted_models[0][0] if sorted_models else "Unknown"
+    results_text += f"🎯 **Recommended model:** `{winner}`\n\n"
+    results_text += "✅ Test completed! Check the markdown report for detailed analysis."
+    
+    await update.message.reply_text(results_text, parse_mode="Markdown")
+    
+    # Stop test
+    stop_human_test(user_id)
+
+def create_markdown_report(filename: str, ratings: list, final_results: dict, json_filename: str) -> None:
+    """Create a detailed markdown report for human test analysis."""
+    with open(filename, 'w') as f:
+        f.write("# 🧪 Human Model Test Report\n\n")
+        f.write(f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+        f.write(f"**Total Ratings:** {len(ratings)}\n")
+        f.write(f"**Models Tested:** {', '.join(MODELS)}\n")
+        f.write(f"**Rating Method:** Human subjective rating (1-5 scale)\n")
+        f.write(f"**JSON Data:** `{json_filename}`\n\n")
+        
+        f.write("## 🏆 Final Rankings\n\n")
+        sorted_models = sorted(final_results.items(), key=lambda x: x[1]["average"], reverse=True)
+        medals = ["🥇", "🥈", "🥉"]
+        
+        for i, (model, data) in enumerate(sorted_models):
+            medal = medals[i] if i < 3 else "  "
+            avg = data["average"]
+            count = data["count"]
+            scores = data["scores"]
+            
+            f.write(f"{medal} **{model}**\n")
+            f.write(f"- **Average:** {avg}/5.0\n")
+            f.write(f"- **Total Ratings:** {count}\n")
+            f.write(f"- **Individual Scores:** {', '.join(map(str, scores))}\n")
+            f.write(f"- **Performance:** {'Excellent' if avg >= 4.5 else 'Good' if avg >= 3.5 else 'Fair' if avg >= 2.5 else 'Poor'}\n\n")
+        
+        f.write("## 📊 Detailed Ratings\n\n")
+        
+        # Group by prompt for analysis
+        prompt_groups = {}
+        for rating in ratings:
+            prompt = rating["prompt"]
+            if prompt not in prompt_groups:
+                prompt_groups[prompt] = []
+            prompt_groups[prompt].append(rating)
+        
+        for i, (prompt, group_ratings) in enumerate(prompt_groups.items(), 1):
+            f.write(f"### Test {i}: {prompt[:50]}...\n\n")
+            
+            for rating in group_ratings:
+                model = rating["model"]
+                response = rating["response"]
+                score = rating["rating"]
+                timestamp = rating["timestamp"]
+                
+                f.write(f"#### {model} (Rated: {score}/5)\n")
+                f.write(f"> {response}\n\n")
+                f.write(f"**Rating:** {score}/5 | **Time:** {timestamp[:19]}\n\n")
+        
+        f.write("---\n")
+        f.write("## 🎯 Recommendations\n\n")
+        
+        winner = sorted_models[0][0] if sorted_models else "Unknown"
+        winner_avg = final_results[winner]["average"]
+        
+        f.write(f"**Best Model:** `{winner}` (Average: {winner_avg}/5)\n\n")
+        
+        if winner_avg >= 4.5:
+            f.write("This model shows **excellent performance** for your therapy needs. ")
+            f.write("Recommended for immediate deployment.\n\n")
+        elif winner_avg >= 3.5:
+            f.write("This model shows **good performance** for your therapy needs. ")
+            f.write("Consider deploying with monitoring.\n\n")
+        else:
+            f.write("This model shows **moderate performance**. ")
+            f.write("Consider testing additional models or refining prompts.\n\n")
+        
+        f.write("### Next Steps\n\n")
+        f.write("1. Update your bot's `DEFAULT_MODEL` setting\n")
+        f.write("2. Deploy changes to production\n")
+        f.write("3. Monitor real-world performance\n")
+        f.write("4. Consider periodic re-testing\n\n")
+        
+        f.write("---\n")
+        f.write("*Generated by MindMate Human Test System*\n")
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error(f"Bot error: {context.error}")
-
 # =============================================================================
 # Main
 # =============================================================================
