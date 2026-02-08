@@ -580,9 +580,6 @@ async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• `/start` - Exit test mode\n\n"
             f"📝 Send your first prompt to begin!"
         )
-        
-        # Automatically trigger first test round
-        await handle_human_test_message(update, user_id, "🧪 Please send your first test prompt to begin!")
     else:
         await update.message.reply_text(
             "❌ Human testing is only available in Personal Mode.\n"
