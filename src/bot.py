@@ -19,9 +19,6 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import uvicorn
 
-# Import database module
-from database import init_database, get_or_create_user, get_recent_messages, add_message_to_conversation
-
 # Unique instance ID to help debug multiple instances
 INSTANCE_ID = str(uuid.uuid4())[:8]
 
@@ -61,7 +58,7 @@ PERSONAL_MODE_USERS = {
         "context": """**About this user:**
 - Name: Keleh
 - **IMPORTANT: User has BIPOLAR DISORDER - this is a key part of her life but not her whole life**
-- Key focus areas: Bipolar management, emotional regulation, mood stability, career growth, education, **relationships**, personal development
+- Key focus areas: Bipolar management, emotional regulation, mood stability, career growth, education, relationships, personal development
 - Communication style: Warm, supportive, needs gentle guidance
 - Prefers empathetic responses over direct advice
 
@@ -69,7 +66,7 @@ PERSONAL_MODE_USERS = {
 - **Bipolar Management**: Mood tracking, medication support, coping strategies, trigger identification
 - **Career**: Professional growth, work challenges, career decisions, workplace relationships
 - **Education**: Learning goals, study strategies, academic challenges, skill development
-- **Relationships**: Romantic partnerships, friendships, family dynamics, social connections, **relationship challenges**
+- **Relationships**: Romantic partnerships, friendships, family dynamics, social connections
 - **Personal Growth**: Self-discovery, confidence building, life decisions, future planning
 
 **IMPORTANT FOR BIPOLAR SUPPORT:**
@@ -79,26 +76,18 @@ PERSONAL_MODE_USERS = {
 - Help identify triggers and early warning signs
 - Provide specific coping strategies for bipolar episodes
 
-**RELATIONSHIP SUPPORT:**
-- **Romantic Relationships**: Dating challenges, communication issues, boundary setting, partner support during episodes
-- **Friendships**: Social anxiety, maintaining connections, explaining bipolar to friends, dealing with stigma
-- **Family Dynamics**: Navigating family support, explaining her condition, setting healthy boundaries
-- **Social Situations**: Work relationships, social events, handling questions about her condition
-
 **BALANCED SUPPORT:**
-- Address bipolar when it's topic, but don't force every conversation to be about it
+- Address bipolar when it's the topic, but don't force every conversation to be about it
 - Support her whole life - career ambitions, educational goals, relationship health
 - Be a comprehensive life coach, not just a bipolar specialist
 - Recognize she's a whole person with multiple interests and challenges
-- **Relationship context**: How her mood and bipolar management affect her connections with others
 
 **DO NOT:**
 - Give generic advice that ignores her bipolar condition when relevant
 - Say "everyone feels that way" or minimize her experience
 - Ignore medication or treatment discussions when brought up
 - Provide one-size-fits-all wellness advice
-- Make every conversation about bipolar when she wants to discuss other topics
-- Dismiss relationship concerns as "drama" or minimize their importance to her wellbeing""",
+- Make every conversation about bipolar when she wants to discuss other topics""",
         "model": "gpt-4.1-mini",  # Premium model for Keleh
     },
 }
@@ -268,6 +257,8 @@ HELP_MESSAGE = """**How I can support you:**
 /help - Show this message
 /mode - Show your current mode and model
 /context - Share important info about your condition/meds (Personal Mode only)
+/remember - Remember important information easier than /context
+/forget - Forget specific information I've learned
 /confirm - Confirm saving of last uploaded file to memory
 /decline - Decline saving of last uploaded file
 /journey - Show your journey tracking and what I've learned about you
@@ -344,10 +335,6 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events for FastAPI."""
     global telegram_app
     
-    # Startup: Initialize database first
-    logger.info(f"[{INSTANCE_ID}] Initializing database...")
-    await init_database()
-    
     # Startup: Initialize and start the Telegram bot
     logger.info(f"[{INSTANCE_ID}] Starting MindMate Bot...")
     
@@ -379,6 +366,8 @@ async def lifespan(app: FastAPI):
         telegram_app.add_handler(CommandHandler("mode", cmd_mode))
         telegram_app.add_handler(CommandHandler("model", cmd_model))
         telegram_app.add_handler(CommandHandler("context", cmd_context))
+        telegram_app.add_handler(CommandHandler("remember", cmd_remember))
+        telegram_app.add_handler(CommandHandler("forget", cmd_forget))
         telegram_app.add_handler(CommandHandler("confirm", cmd_confirm))
         telegram_app.add_handler(CommandHandler("decline", cmd_decline))
         telegram_app.add_handler(CommandHandler("journey", cmd_journey))
@@ -473,24 +462,78 @@ async def webhook(request: Request):
         return {"error": str(e)}
 
 # =============================================================================
-# Conversation History (PostgreSQL)
+# Conversation History
 # =============================================================================
 
-async def get_history(user_id: int) -> list[dict[str, str]]:
-    """Get conversation history from database"""
-    messages = await get_recent_messages(user_id, limit=MAX_HISTORY_LENGTH)
-    return [{"role": msg.role, "content": msg.content} for msg in messages]
+def get_history(user_id: int) -> list[dict[str, str]]:
+    return conversation_history.get(user_id, [])
 
-async def add_to_history(user_id: int, role: str, content: str) -> None:
-    """Add message to database history"""
-    await add_message_to_conversation(user_id, role, content)
+def store_pending_context(user_id: int, file_info: str, description: str) -> None:
+    """Store context temporarily waiting for user confirmation."""
+    pending_context[user_id] = {
+        "file_info": file_info,
+        "description": description,
+        "timestamp": datetime.now().isoformat()
+    }
 
-async def clear_history(user_id: int) -> None:
-    """Clear conversation history - note: PostgreSQL keeps full history, this just clears current session context"""
-    # In PostgreSQL, we don't delete history - we just start a new conversation
-    # The old history remains for future reference and analysis
-    logger.info(f"User {user_id} requested history clear - starting new conversation session")
-    pass
+def update_user_journey(user_id: int, key: str, value: str) -> None:
+    """Update user's journey tracking for continuity of care."""
+    if user_id not in user_journey:
+        user_journey[user_id] = {
+            "diagnosis_status": "unknown",
+            "medication_status": "unknown", 
+            "doctor_visits": "unknown",
+            "therapy_status": "unknown",
+            "family_support": "unknown",
+            "living_situation": "unknown",
+            "last_mood_episode": "unknown",
+            "medication_adherence": "unknown",
+            "crisis_history": [],
+            "progress_notes": [],
+            "last_updated": datetime.now().isoformat()
+        }
+    
+    user_journey[user_id][key] = value
+    user_journey[user_id]["last_updated"] = datetime.now().isoformat()
+    logger.info(f"Updated journey for user {user_id}: {key} = {value}")
+
+def get_user_journey_summary(user_id: int) -> str:
+    """Get formatted summary of user's journey for context."""
+    if user_id not in user_journey:
+        return "No journey information available."
+    
+    journey = user_journey[user_id]
+    summary_parts = []
+    
+    if journey.get("diagnosis_status") != "unknown":
+        summary_parts.append(f"Diagnosis: {journey['diagnosis_status']}")
+
+    if journey.get("medication_status") != "unknown":
+        summary_parts.append(f"Medication: {journey['medication_status']}")
+
+    if journey.get("doctor_visits") != "unknown":
+        summary_parts.append(f"Doctor visits: {journey['doctor_visits']}")
+
+    if journey.get("therapy_status") != "unknown":
+        summary_parts.append(f"Therapy: {journey['therapy_status']}")
+
+    if journey.get("family_support") != "unknown":
+        summary_parts.append(f"Family support: {journey['family_support']}")
+
+    if journey.get("living_situation") != "unknown":
+        summary_parts.append(f"Living situation: {journey['living_situation']}")
+
+    return " | ".join(summary_parts) if summary_parts else "Building understanding of your situation..."
+
+def add_to_history(user_id: int, role: str, content: str) -> None:
+    if user_id not in conversation_history:
+        conversation_history[user_id] = []
+    conversation_history[user_id].append({"role": role, "content": content})
+    if len(conversation_history[user_id]) > MAX_HISTORY_LENGTH:
+        conversation_history[user_id] = conversation_history[user_id][-MAX_HISTORY_LENGTH:]
+
+def clear_history(user_id: int) -> None:
+    conversation_history.pop(user_id, None)
 
 # =============================================================================
 # Crisis Detection
@@ -548,7 +591,7 @@ async def cmd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    await clear_history(user_id)
+    clear_history(user_id)
     logger.info(f"User {user_id} cleared history")
     await update.message.reply_text("Conversation history cleared. 🧹")
 
@@ -574,7 +617,7 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if model_key in AVAILABLE_MODELS:
         new_model = AVAILABLE_MODELS[model_key]
         set_user_model(user_id, new_model)
-        await clear_history(user_id)  # Clear history when switching models
+        clear_history(user_id)  # Clear history when switching models
         logger.info(f"User {user_id} switched to model: {new_model}")
         await update.message.reply_text(
             f"✅ Switched to **{new_model}**\n\n"
@@ -585,6 +628,114 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
             f"❌ Unknown model: `{model_key}`\n\n"
             f"Available: {', '.join(AVAILABLE_MODELS.keys())}",
+        )
+
+
+async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Remember important information - easier to remember than /context."""
+    user_id = update.effective_user.id
+    
+    if not is_personal_mode(user_id):
+        await update.message.reply_text("This feature is only available in Personal Mode.")
+        return
+    
+    if context.args:
+        # Add context: /remember "I have bipolar type 2"
+        context_text = " ".join(context.args)
+        
+        # Add to conversation history as a system message for immediate context
+        await add_to_history(user_id, "system", f"IMPORTANT USER CONTEXT: {context_text}")
+        
+        # Also update journey tracking with structured context
+        update_context_from_message(user_id, context_text)
+        
+        await update.message.reply_text(
+            f"🧠 **Got it!** I'll remember this for our conversations.\n\n"
+            f"💡 This helps me provide better, more personalized support."
+        )
+        logger.info(f"User {user_id} remembered: {context_text}")
+    else:
+        # Show current context and explain auto-learning
+        current_context = get_user_journey_summary(user_id)
+        
+        await update.message.reply_text(
+            f"🧠 **Share important information to remember:**\n\n"
+            f"• `/remember I have bipolar type 2` - Medical info\n"
+            f"• `/remember I take Lithium 300mg daily` - Medication details\n"
+            f"• `/remember My therapist is Dr. Smith` - Treatment info\n"
+            f"• `/remember I live alone in Johannesburg` - Living situation\n"
+            f"• `/remember My boyfriend is very supportive` - Relationship info\n\n"
+            f"🧠 **Current Understanding:**\n{current_context}\n\n"
+            f"🤖 **Automatic Learning:** I also learn from our conversations naturally! "
+            f"When you mention medications, symptoms, life changes, or relationship issues, "
+            f"I remember these for future support. No need to manually add everything "
+            f"unless it's important information you want me to prioritize."
+        )
+
+
+async def cmd_forget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Forget specific information - remove from journey tracking."""
+    user_id = update.effective_user.id
+    
+    if not is_personal_mode(user_id):
+        await update.message.reply_text("This feature is only available in Personal Mode.")
+        return
+    
+    if context.args:
+        # Forget specific information: /forget "medication status"
+        forget_text = " ".join(context.args).lower()
+        
+        # Try to match and remove specific journey entries
+        removed_items = []
+        
+        if any(word in forget_text for word in ["medication", "meds", "medicine"]):
+            if "medication_status" in user_journey.get(user_id, {}):
+                del user_journey[user_id]["medication_status"]
+                removed_items.append("medication status")
+        
+        if any(word in forget_text for word in ["therapy", "therapist", "counselor"]):
+            if "therapy_status" in user_journey.get(user_id, {}):
+                del user_journey[user_id]["therapy_status"]
+                removed_items.append("therapy status")
+        
+        if any(word in forget_text for word in ["diagnosis", "condition", "bipolar"]):
+            if "diagnosis_status" in user_journey.get(user_id, {}):
+                del user_journey[user_id]["diagnosis_status"]
+                removed_items.append("diagnosis status")
+        
+        if any(word in forget_text for word in ["relationship", "partner", "boyfriend", "girlfriend"]):
+            if "relationship_status" in user_journey.get(user_id, {}):
+                del user_journey[user_id]["relationship_status"]
+                removed_items.append("relationship status")
+        
+        if any(word in forget_text for word in ["work", "job", "career"]):
+            if "career_status" in user_journey.get(user_id, {}):
+                del user_journey[user_id]["career_status"]
+                removed_items.append("career status")
+        
+        if removed_items:
+            await update.message.reply_text(
+                f"🗑️ **Forgotten:** {', '.join(removed_items)}\n\n"
+                f"💡 I've removed this information from my memory. "
+                f"I'll update my understanding based on future conversations."
+            )
+            logger.info(f"User {user_id} forgot: {', '.join(removed_items)}")
+        else:
+            await update.message.reply_text(
+                f"❓ **Not sure what to forget.**\n\n"
+                f"Try: `/forget medication` or `/forget therapy` or `/forget relationship`\n\n"
+                f"💡 I'll remove that specific information from my memory."
+            )
+    else:
+        await update.message.reply_text(
+            f"🗑️ **Forget specific information:**\n\n"
+            f"• `/forget medication` - Remove medication info\n"
+            f"• `/forget therapy` - Remove therapy info\n"
+            f"• `/forget diagnosis` - Remove diagnosis info\n"
+            f"• `/forget relationship` - Remove relationship info\n"
+            f"• `/forget work` - Remove career info\n\n"
+            f"💡 I'll remove that specific information from my memory "
+            f"and update based on future conversations."
         )
 
 
@@ -601,10 +752,7 @@ async def cmd_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         context_text = " ".join(context.args)
         
         # Add to conversation history as a system message for immediate context
-        await add_to_history(user_id, "system", f"IMPORTANT USER CONTEXT: {context_text}")
-        
-        # Also update journey tracking with structured context
-        update_context_from_message(user_id, context_text)
+        add_to_history(user_id, "system", f"IMPORTANT USER CONTEXT: {context_text}")
         
         await update.message.reply_text(
             f"✅ **Context saved!** I'll remember this for our conversations.\n\n"
@@ -612,72 +760,14 @@ async def cmd_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
         logger.info(f"User {user_id} added context: {context_text}")
     else:
-        # Show current context and explain automatic learning
-        current_context = get_user_journey_summary(user_id)
-        
         await update.message.reply_text(
-            f"💡 **Share important context about yourself:**\n\n"
+            "💡 **Share important context about yourself:**\n\n"
             f"• `/context I have bipolar disorder` - Share your condition\n"
             f"• `/context I take Lithium 300mg daily` - Share medications\n"
-            f"• `/context I struggle with sleep during episodes` - Share patterns\n"
+            f"• `/context I struggle with sleep during manic episodes` - Share patterns\n"
             f"• `/context My therapist is Dr. Smith` - Share treatment info\n\n"
-            f"🧠 **Current Understanding:**\n{current_context}\n\n"
-            f"🤖 **Automatic Learning:** I also learn from our conversations naturally! "
-            f"When you mention medications, symptoms, life changes, or relationship issues, "
-            f"I remember these for future support. No need to manually add everything "
-            f"unless it's important information you want me to prioritize."
+            f"This helps me provide better, personalized support!"
         )
-
-
-def update_context_from_message(user_id: int, message: str) -> None:
-    """Automatically update user journey based on conversation content."""
-    message_lower = message.lower()
-    
-    # Medication mentions
-    if any(word in message_lower for word in ["medication", "meds", "medicine", "pill", "prescription", "dose", "lithium", "seroquel", "lamictal"]):
-        if "take" in message_lower or "on" in message_lower or "start" in message_lower:
-            update_user_journey(user_id, "medication_status", "Currently taking medication")
-        elif "stop" in message_lower or "quit" in message_lower or "off" in message_lower:
-            update_user_journey(user_id, "medication_status", "Stopped medication")
-        elif "miss" in message_lower or "forget" in message_lower:
-            update_user_journey(user_id, "medication_adherence", "Sometimes misses doses")
-    
-    # Doctor/therapy mentions
-    if any(word in message_lower for word in ["doctor", "therapist", "psychiatrist", "counselor", "appointment", "session"]):
-        if "appointment" in message_lower or "visit" in message_lower or "see" in message_lower:
-            update_user_journey(user_id, "doctor_visits", "Recent doctor visit")
-        elif "therapy" in message_lower or "counseling" in message_lower:
-            update_user_journey(user_id, "therapy_status", "Currently in therapy")
-    
-    # Mood/episode mentions
-    if any(word in message_lower for word in ["depressed", "depression", "manic", "mania", "episode", "mood swing", "hypomanic"]):
-        if "last week" in message_lower or "recently" in message_lower:
-            update_user_journey(user_id, "last_mood_episode", "Recent mood episode")
-    
-    # Support system mentions
-    if any(word in message_lower for word in ["family", "sister", "brother", "mom", "dad", "support", "alone", "isolated"]):
-        if "help" in message_lower or "support" in message_lower:
-            update_user_journey(user_id, "family_support", "Has family support")
-        elif "no support" in message_lower or "alone" in message_lower or "isolated" in message_lower:
-            update_user_journey(user_id, "family_support", "Limited family support")
-    
-    # Living situation mentions
-    if any(word in message_lower for word in ["live alone", "living by myself", "roommate", "apartment", "house", "moved"]):
-        update_user_journey(user_id, "living_situation", "Living independently")
-    
-    # Work/career mentions
-    if any(word in message_lower for word in ["work", "job", "career", "boss", "coworker", "unemployed", "fired"]):
-        if "stress" in message_lower or "overwhelmed" in message_lower:
-            update_user_journey(user_id, "career_status", "Work stress affecting mental health")
-    
-    # Relationship mentions
-    if any(word in message_lower for word in ["boyfriend", "girlfriend", "partner", "relationship", "dating", "breakup", "friend"]):
-        if "fight" in message_lower or "argument" in message_lower:
-            update_user_journey(user_id, "relationship_status", "Relationship conflicts")
-        elif "supportive" in message_lower or "understanding" in message_lower:
-            update_user_journey(user_id, "relationship_status", "Supportive partner")
-    
-    logger.info(f"Auto-updated context for user {user_id} from message: {message[:50]}...")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -734,8 +824,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     try:
         messages = [{"role": "system", "content": system_prompt}]
-        history = await get_history(user_id)
-        messages.extend(history)
+        messages.extend(get_history(user_id))
         messages.append({"role": "user", "content": message})
         
         response = openai_client.chat.completions.create(
@@ -748,8 +837,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         reply = response.choices[0].message.content
         
-        await add_to_history(user_id, "user", message)
-        await add_to_history(user_id, "assistant", reply)
+        add_to_history(user_id, "user", message)
+        add_to_history(user_id, "assistant", reply)
         
         await update.message.reply_text(reply)
         logger.info(f"Responded to user {user_id}")
@@ -818,6 +907,61 @@ async def handle_daily_summary_response(update: Update, context: ContextTypes.DE
     )
     
     logger.info(f"User {user_id} submitted daily summary for {today}")
+
+
+def update_context_from_message(user_id: int, message: str) -> None:
+    """Automatically update user journey based on conversation content.
+    
+    This function uses keyword matching to detect important information in natural conversation.
+    It's NOT built into the AI - it's custom code that scans messages for specific patterns.
+    """
+    message_lower = message.lower()
+    
+    # Medication mentions - scan for medication-related keywords
+    if any(word in message_lower for word in ["medication", "meds", "medicine", "pill", "prescription", "dose", "lithium", "seroquel", "lamictal"]):
+        if "take" in message_lower or "on" in message_lower or "start" in message_lower:
+            update_user_journey(user_id, "medication_status", "Currently taking medication")
+        elif "stop" in message_lower or "quit" in message_lower or "off" in message_lower:
+            update_user_journey(user_id, "medication_status", "Stopped medication")
+        elif "miss" in message_lower or "forget" in message_lower:
+            update_user_journey(user_id, "medication_adherence", "Sometimes misses doses")
+    
+    # Doctor/therapy mentions - scan for treatment-related keywords
+    if any(word in message_lower for word in ["doctor", "therapist", "psychiatrist", "counselor", "appointment", "session"]):
+        if "appointment" in message_lower or "visit" in message_lower or "see" in message_lower:
+            update_user_journey(user_id, "doctor_visits", "Recent doctor visit")
+        elif "therapy" in message_lower or "counseling" in message_lower:
+            update_user_journey(user_id, "therapy_status", "Currently in therapy")
+    
+    # Mood/episode mentions - scan for bipolar-related keywords
+    if any(word in message_lower for word in ["depressed", "depression", "manic", "mania", "episode", "mood swing", "hypomanic"]):
+        if "last week" in message_lower or "recently" in message_lower:
+            update_user_journey(user_id, "last_mood_episode", "Recent mood episode")
+    
+    # Support system mentions - scan for family/social keywords
+    if any(word in message_lower for word in ["family", "sister", "brother", "mom", "dad", "support", "alone", "isolated"]):
+        if "help" in message_lower or "support" in message_lower:
+            update_user_journey(user_id, "family_support", "Has family support")
+        elif "no support" in message_lower or "alone" in message_lower or "isolated" in message_lower:
+            update_user_journey(user_id, "family_support", "Limited family support")
+    
+    # Living situation mentions - scan for housing keywords
+    if any(word in message_lower for word in ["live alone", "living by myself", "roommate", "apartment", "house", "moved"]):
+        update_user_journey(user_id, "living_situation", "Living independently")
+    
+    # Work/career mentions - scan for job-related keywords
+    if any(word in message_lower for word in ["work", "job", "career", "boss", "coworker", "unemployed", "fired"]):
+        if "stress" in message_lower or "overwhelmed" in message_lower:
+            update_user_journey(user_id, "career_status", "Work stress affecting mental health")
+    
+    # Relationship mentions - scan for relationship keywords
+    if any(word in message_lower for word in ["boyfriend", "girlfriend", "partner", "relationship", "dating", "breakup", "friend"]):
+        if "fight" in message_lower or "argument" in message_lower:
+            update_user_journey(user_id, "relationship_status", "Relationship conflicts")
+        elif "supportive" in message_lower or "understanding" in message_lower:
+            update_user_journey(user_id, "relationship_status", "Supportive partner")
+    
+    logger.info(f"Auto-updated context for user {user_id} from message: {message[:50]}...")
 
 
 async def send_scheduled_daily_summary(user_id: int) -> None:
@@ -904,10 +1048,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             logger.info(f"Transcription successful: {transcribed_text[:100]}...")
             
             # Add transcription to history
-            await add_to_history(user_id, "user", transcribed_text)
+            add_to_history(user_id, "user", transcribed_text)
             
             # Get conversation history
-            history = await get_history(user_id)
+            history = get_history(user_id)
             
             # Generate response
             system_prompt = get_personal_mode_prompt(user_id) if personal_mode else SYSTEM_PROMPT
@@ -940,7 +1084,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 return
             
             # Add response to history
-            await add_to_history(user_id, "assistant", response_text)
+            add_to_history(user_id, "assistant", response_text)
             
             # Generate voice response
             logger.info(f"About to create TTS for user {user_id}")
@@ -1079,7 +1223,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             # For now, just acknowledge and add to context
             # In future, we could extract text from PDFs
             context_message = f"User shared document: {document.file_name} - this contains important treatment/medical information"
-            await add_to_history(user_id, "system", context_message)
+            add_to_history(user_id, "system", context_message)
             
             await update.message.reply_text(
                 f"📄 **Document received!** I've saved '{document.file_name}' for context.\n\n"
