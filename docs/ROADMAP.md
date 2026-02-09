@@ -99,6 +99,55 @@ A private, unfiltered AI therapist experience. No corporate guardrails.
 
 ---
 
+### 🔍 Internet Search Capabilities
+
+**Status:** 🔜 Next Priority
+
+Enable the bot to search the internet for current information, resources, and evidence-based mental health content.
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| **Real-time Information** | Search for current mental health research, news, and resources | High |
+| **Resource Verification** | Find and verify local mental health services and crisis lines | High |
+| **Evidence-based Responses** | Supplement AI knowledge with up-to-date research findings | Medium |
+| **Local Service Discovery** | Search for therapists, support groups, and services by location | Medium |
+
+**Implementation Approach:**
+- **Search API:** Use Google Search API or Bing Search API
+- **Content Filtering:** Ensure results are from reputable mental health sources
+- **Privacy:** No personal data in searches, only general queries
+- **Cost Control:** Limit searches per conversation to manage API costs
+
+**Use Cases:**
+- "Find therapists near me who specialize in anxiety"
+- "What are the latest research findings on CBT for depression?"
+- "Local support groups for bipolar disorder in Johannesburg"
+- "Current mental health resources during COVID-19"
+
+**Technical Implementation:**
+```python
+# Search integration example
+async def search_internet(query: str, location: str = None) -> List[SearchResult]:
+    """Search the internet for mental health resources and information"""
+    search_query = f"{query} mental health"
+    if location:
+        search_query += f" {location}"
+    
+    results = search_api.search(search_query, safe_search="active")
+    
+    # Filter for reputable sources only
+    filtered_results = [
+        result for result in results 
+        if is_reputable_source(result.domain)
+    ]
+    
+    return filtered_results[:5]  # Limit to top 5 results
+```
+
+**Priority:** High (significantly enhances bot's usefulness and credibility)
+
+---
+
 ### 🧠 Persistent Memory (NEXT PRIORITY)
 
 Long-term memory so the bot truly knows you across sessions.
@@ -409,13 +458,13 @@ max_tokens = 600
 | `/resources` | SA mental health resources | Categorized helplines and services |
 
 #### Features
-- [ ] Mood tracking with persistence
+- [x] Mood tracking with persistence
 - [ ] Mood trends visualization (text-based graph)
 - [ ] Breathing exercise guides with step-by-step timing
 - [ ] Journaling with AI-generated prompts
 - [ ] Gratitude exercises
 - [ ] Daily check-in reminders (opt-in via /remind)
-- [ ] Weekly mood summary
+- [ ] **Weekly insights based on conversation analysis** | 🔜 **Next Priority**
 
 #### Example: Mood Tracking
 ```
@@ -431,6 +480,119 @@ Bot: I hear you're feeling anxious. Would you like to:
      
      Your mood has been tracked. You've logged 5 moods this week.
 ```
+
+---
+
+### 📊 Weekly Insights (NEW PRIORITY)
+
+**Status:** 🔜 Next Priority  
+**Timeline:** 4-6 weeks  
+**Goal:** Provide intelligent weekly analysis based on conversation patterns
+
+#### Feature Overview
+Analyze weekly conversations to generate personalized insights about mental health patterns, progress, and areas needing attention.
+
+#### How It Works
+| Step | Description |
+|------|-------------|
+| **Conversation Analysis** | AI analyzes all messages from the past week |
+| **Pattern Detection** | Identifies mood trends, recurring topics, triggers |
+| **Progress Tracking** | Compares current week to previous weeks |
+| **Personalized Insights** | Generates specific observations and recommendations |
+| **Weekly Delivery** | Automated Sunday evening summary |
+
+#### Insights Generated
+| Category | What AI Analyzes |
+|----------|-------------------|
+| **Mood Patterns** | "You've been feeling more stable this week - 3 good days vs 2 anxious days" |
+| **Recurring Topics** | "Work stress mentioned 4 times, sleep issues 3 times" |
+| **Progress Indicators** | "Better coping strategies than last month - using breathing techniques" |
+| **Trigger Identification** | "Late night conversations often precede difficult mornings" |
+| **Positive Changes** | "More consistent journaling, reaching out for support" |
+| **Areas of Concern** | "Medication adherence dropping, isolation increasing" |
+| **Recommendations** | "Consider earlier bedtime, discuss work boundaries with therapist" |
+
+#### Example Weekly Insight
+```
+📊 **Your Weekly Mental Health Summary**
+
+**Mood Overview:**
+This week showed improvement! 😊 4 good days, 😐 2 okay days, 😰 1 anxious day
+Better than last week (2 good, 3 anxious, 2 depressed)
+
+**Key Patterns:**
+• Work stress peaked on Wednesday/Thursday (project deadline)
+• Sleep quality improved after starting bedtime routine
+• More social connection this week (3 friend conversations)
+
+**Progress Wins:**
+✅ Used breathing exercises during stressful moments
+✅ Consistent daily journaling (6/7 days)
+✅ Reached out to sister for support
+
+**Areas to Watch:**
+⚠️ Medication mentioned only 3 times (possible adherence issues)
+⚠️ Isolation feelings increased on weekends
+
+**Next Week Focus:**
+🎯 Set medication reminders for consistency
+🎯 Plan weekend social activities
+🎯 Continue stress management before work deadlines
+
+**AI Recommendation:**
+"You're building good coping strategies! Consider discussing work stress boundaries 
+with your therapist - the pattern is clear and you're handling it well."
+
+💡 Keep up the great work - your consistency is paying off!
+```
+
+#### Technical Implementation
+```python
+# Weekly insights generation
+async def generate_weekly_insights(user_id: int) -> str:
+    """Generate personalized weekly insights from conversation analysis."""
+    
+    # Get week's conversations
+    week_messages = get_week_conversations(user_id)
+    
+    # Analyze patterns
+    mood_analysis = analyze_mood_patterns(week_messages)
+    topic_analysis = analyze_recurring_topics(week_messages)
+    progress_analysis = analyze_progress_indicators(week_messages)
+    
+    # Generate insights
+    insights = {
+        "mood_overview": mood_analysis["summary"],
+        "key_patterns": topic_analysis["patterns"],
+        "progress_wins": progress_analysis["wins"],
+        "areas_concern": progress_analysis["concerns"],
+        "recommendations": generate_recommendations(analyses)
+    }
+    
+    return format_weekly_insights(insights)
+
+# Schedule weekly delivery
+async def send_weekly_insights(user_id: int):
+    """Send weekly insights every Sunday evening."""
+    insights = await generate_weekly_insights(user_id)
+    
+    await telegram_app.bot.send_message(
+        chat_id=user_id,
+        text=insights,
+        parse_mode="Markdown"
+    )
+```
+
+#### Benefits for Keleh
+- **Pattern Recognition**: Identifies bipolar episode early warning signs
+- **Progress Tracking**: Shows improvement over time, builds motivation  
+- **Personalized Advice**: Specific to her conversation patterns
+- **Proactive Support**: AI identifies concerns before they become crises
+- **Continuity**: Connects daily journaling to bigger picture
+- **Therapy Support**: Provides concrete topics to discuss with therapist
+
+#### Priority: High
+This transforms the bot from reactive to proactive mental health management, providing the continuity of care that Keleh needs for effective bipolar management.
 
 ---
 
@@ -669,6 +831,7 @@ else:
 - [ ] **Multi-language support** (Zulu, Afrikaans, Xhosa)
 - [ ] **Context awareness** (time of day, weather-based suggestions)
 - [ ] **Progressive disclosure** (build trust gradually for deeper topics)
+- [ ] **Internet search capabilities** (real-time mental health resources and research)
 
 ### 🔧 Technical Improvements (My Suggestions)
 - [ ] **Message scheduling** (send reminders, check-ins)
