@@ -336,6 +336,8 @@ async def lifespan(app: FastAPI):
         telegram_app.add_handler(CommandHandler("model", cmd_model))
         telegram_app.add_handler(CommandHandler("context", cmd_context))
         telegram_app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
+        telegram_app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image_document))
+        telegram_app.add_handler(MessageHandler(filters.Document.PDF | filters.Document.TEXT, handle_document))
         telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         telegram_app.add_error_handler(error_handler)
         
@@ -777,6 +779,82 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
+
+async def handle_image_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle images and documents - automatically learn from them for Personal Mode users."""
+    user_id = update.effective_user.id
+    personal_mode = is_personal_mode(user_id)
+    
+    if not personal_mode:
+        await update.message.reply_text("I can only learn from documents in Personal Mode.")
+        return
+    
+    try:
+        # Get file info
+        if update.message.photo:
+            # Handle photo
+            photo = update.message.photo[-1]  # Get highest resolution
+            file = await context.bot.get_file(photo.file_id)
+            file_info = f"Photo: {file.file_path}"
+        else:
+            # Handle document image
+            document = update.message.document
+            file = await context.bot.get_file(document.file_id)
+            file_info = f"Document: {document.file_name}"
+        
+        # Download file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+            await file.download_to_drive(temp_file.name)
+            
+            # For now, just acknowledge and add to context
+            # In future, we could use OCR or vision API to analyze content
+            context_message = f"User shared {file_info} - this is important context about their condition/treatment"
+            add_to_history(user_id, "system", context_message)
+            
+            await update.message.reply_text(
+                f"📸 **Got it!** I've saved this {file_info.split(':')[0].lower()} for context.\n\n"
+                f"💡 This helps me better understand your situation and provide more personalized support."
+            )
+            
+            logger.info(f"User {user_id} shared {file_info}")
+            
+    except Exception as e:
+        logger.error(f"Error processing image/document for user {user_id}: {e}")
+        await update.message.reply_text("❌ I had trouble processing that file. Please try again.")
+
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle PDF and text documents - automatically learn from them for Personal Mode users."""
+    user_id = update.effective_user.id
+    personal_mode = is_personal_mode(user_id)
+    
+    if not personal_mode:
+        await update.message.reply_text("I can only learn from documents in Personal Mode.")
+        return
+    
+    try:
+        document = update.message.document
+        file = await context.bot.get_file(document.file_id)
+        
+        # Download file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            await file.download_to_drive(temp_file.name)
+            
+            # For now, just acknowledge and add to context
+            # In future, we could extract text from PDFs
+            context_message = f"User shared document: {document.file_name} - this contains important treatment/medical information"
+            add_to_history(user_id, "system", context_message)
+            
+            await update.message.reply_text(
+                f"📄 **Document received!** I've saved '{document.file_name}' for context.\n\n"
+                f"💡 This helps me understand your treatment plan and provide better support."
+            )
+            
+            logger.info(f"User {user_id} shared document: {document.file_name}")
+            
+    except Exception as e:
+        logger.error(f"Error processing document for user {user_id}: {e}")
+        await update.message.reply_text("❌ I had trouble processing that document. Please try again.")
 
 
 def create_markdown_report(filename: str, ratings: list, final_results: dict, json_filename: str) -> None:
