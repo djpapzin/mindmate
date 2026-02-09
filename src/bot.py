@@ -53,17 +53,14 @@ PERSONAL_MODE_USERS = {
 - Communication style: Direct, honest, no sugarcoating""",
         "model": "gpt-4.1-mini",  # Premium model for DJ
     },
-    # Keleh will be added here when her user ID is known
-    # Example: 123456789: { "name": "Keleh", "model": "gpt-4.1-mini" }
-    7013163582: {  # New user - onboarding mode
-        "name": None,  # Will learn through conversation
+    7013163582: {  # Keleh
+        "name": "Keleh",
         "context": """**About this user:**
-- This is a NEW user you're just meeting
-- Start by warmly introducing yourself and asking their name
-- Gently learn what kind of support they're looking for
-- Be curious and caring as you get to know them
-- Remember what they share and reference it naturally""",
-        "model": "gpt-4o-mini",  # Standard model for new users
+- Name: Keleh
+- Key focus areas: Bipolar management, emotional regulation, mood stability
+- Communication style: Warm, supportive, needs gentle guidance
+- Prefers empathetic responses over direct advice""",
+        "model": "gpt-4.1-mini",  # Premium model for Keleh
     },
 }
 
