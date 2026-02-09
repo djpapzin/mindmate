@@ -92,6 +92,13 @@ pydantic                        # Data validation
 - **Process**: Single `python src/bot.py` command
 - **Port**: 10000 (Render standard)
 
+### ⚠️ Service Status Notes
+- **PostgreSQL Service**: Still running but NOT used by current implementation
+  - Connection attempts are Render health checks (normal behavior)
+  - Can be safely deleted or kept for future analytics
+  - No impact on Redis performance or functionality
+- **Redis Service**: Active primary storage for all bot operations
+
 ## 📚 Documentation
 
 ### 📋 Core Docs

@@ -75,6 +75,9 @@ Visual diagrams to understand how MindMate works.
 │  │  │   • sessions table (summaries)                      │  │  │
 │  │  │   • messages table (history)                        │  │  │
 │  │  │   • Replaced by Redis for performance               │  │  │
+│  │  │   • Service still running for health checks         │  │  │
+│  │  │   • NOT used by current implementation              │  │  │
+│  │  │   • Can be safely deleted or kept for future use    │  │  │
 │  │  └─────────────────────────────────────────────────────┘  │  │
 │  │                                                           │  │
 │  └───────────────────────────────────────────────────────────┘  │
