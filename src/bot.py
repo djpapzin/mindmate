@@ -739,6 +739,173 @@ async def cmd_forget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
 
 
+async def cmd_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Confirm saving of last uploaded file to memory."""
+    user_id = update.effective_user.id
+    
+    if not is_personal_mode(user_id):
+        await update.message.reply_text("This feature is only available in Personal Mode.")
+        return
+    
+    # Check if there's a pending file to confirm
+    pending_file = pending_files.get(user_id)
+    if not pending_file:
+        await update.message.reply_text(
+            "❓ **No pending file to confirm.**\n\n"
+            "Please upload a file first, then use /confirm to save it to my memory."
+        )
+        return
+    
+    # Save the file content to conversation history
+    file_content = pending_file["content"]
+    file_type = pending_file["type"]
+    file_name = pending_file["name"]
+    
+    await add_to_history(user_id, "system", f"USER FILE ({file_type}): {file_name}\n\n{file_content}")
+    
+    # Update journey tracking with file insights
+    update_context_from_message(user_id, f"Uploaded {file_type}: {file_content[:200]}")
+    
+    # Clear pending file
+    del pending_files[user_id]
+    
+    await update.message.reply_text(
+        f"✅ **File saved to memory!**\n\n"
+        f"📄 **{file_name}** ({file_type}) has been saved to our conversation history.\n\n"
+        f"💡 I'll use this information to provide better, more personalized support."
+    )
+    
+    logger.info(f"User {user_id} confirmed file: {file_name}")
+
+
+async def cmd_decline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Decline saving of last uploaded file."""
+    user_id = update.effective_user.id
+    
+    if not is_personal_mode(user_id):
+        await update.message.reply_text("This feature is only available in Personal Mode.")
+        return
+    
+    # Check if there's a pending file to decline
+    pending_file = pending_files.get(user_id)
+    if not pending_file:
+        await update.message.reply_text(
+            "❓ **No pending file to decline.**\n\n"
+            "Please upload a file first, then use /decline to discard it."
+        )
+        return
+    
+    file_name = pending_file["name"]
+    file_type = pending_file["type"]
+    
+    # Clear pending file
+    del pending_files[user_id]
+    
+    await update.message.reply_text(
+        f"🗑️ **File discarded.**\n\n"
+        f"📄 **{file_name}** ({file_type}) has been removed and not saved to memory.\n\n"
+        f"💡 Your privacy is important - nothing was retained."
+    )
+    
+    logger.info(f"User {user_id} declined file: {file_name}")
+
+
+async def cmd_journey(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show your journey tracking and what I've learned about you."""
+    user_id = update.effective_user.id
+    
+    if not is_personal_mode(user_id):
+        await update.message.reply_text("This feature is only available in Personal Mode.")
+        return
+    
+    # Get journey summary
+    journey_summary = get_user_journey_summary(user_id)
+    
+    if not journey_summary or "No journey information" in journey_summary:
+        await update.message.reply_text(
+            "📔 **Your Journey**\n\n"
+            "I haven't learned much about you yet!\n\n"
+            "💡 Share information using:\n"
+            "• `/remember I have bipolar disorder`\n"
+            "• `/remember I take Lithium 300mg`\n"
+            "• Or just chat naturally - I learn from our conversations!\n\n"
+            "🤖 **Automatic Learning:** I also detect important information "
+            "from our conversations and remember it for future support."
+        )
+        return
+    
+    await update.message.reply_text(
+        f"📔 **Your Journey Summary**\n\n"
+        f"{journey_summary}\n\n"
+        f"💡 **How I Learn:**\n"
+        f"• Manual: `/remember` important information\n"
+        f"• Automatic: I learn from our conversations\n"
+        f"• Control: `/forget` to remove specific info\n\n"
+        f"🎯 This helps me provide personalized support!"
+    )
+
+
+async def cmd_journal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Daily journaling and mood tracking."""
+    user_id = update.effective_user.id
+    
+    if not is_personal_mode(user_id):
+        await update.message.reply_text("This feature is only available in Personal Mode.")
+        return
+    
+    # Check if user has journal entries
+    today = datetime.now().strftime("%Y-%m-%d")
+    user_journals_today = daily_journals.get(user_id, {}).get(today, [])
+    
+    if user_journals_today:
+        await update.message.reply_text(
+            f"📔 **Today's Journal** ({today})\n\n"
+            f"You've written {len(user_journals_today)} entry(ies) today.\n\n"
+            f"💡 **Recent entries:**\n"
+            + "\n\n".join([
+                f"• {entry['timestamp'].split('T')[1][:5]} - {entry['entry'][:100]}..."
+                for entry in user_journals_today[-3:]
+            ]) + "\n\n"
+            f"🎯 Keep writing! Your consistency builds valuable insights."
+        )
+    else:
+        await update.message.reply_text(
+            f"📔 **Daily Journal** ({today})\n\n"
+            f"No entries yet today.\n\n"
+            f"💡 **Start journaling:**\n"
+            f"• Write about your day\n"
+            f"• Share how you're feeling\n"
+            f"• Note any challenges or wins\n\n"
+            f"🎯 I'll remember your entries and help you spot patterns!"
+        )
+
+
+async def cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Set up automated daily journaling reminders."""
+    user_id = update.effective_user.id
+    
+    if not is_personal_mode(user_id):
+        await update.message.reply_text("This feature is only available in Personal Mode.")
+        return
+    
+    # For now, just show the current schedule info
+    await update.message.reply_text(
+        f"⏰ **Daily Journal Schedule**\n\n"
+        f"🌅 **6:00 PM Daily Reminder**\n"
+        f"I'll send you a gentle reminder each evening to share your day.\n\n"
+        f"💡 **How it works:**\n"
+        f"• At 6 PM, I'll message you for your daily summary\n"
+        f"• Just reply naturally - no commands needed\n"
+        f"• If you're busy, say \"later\" and I'll check in tomorrow\n\n"
+        f"🎯 **Benefits:**\n"
+        f"• Builds consistent self-reflection habit\n"
+        f"• Helps track mood patterns over time\n"
+        f"• Creates valuable insights for your wellness journey\n\n"
+        f"📝 **Your recent activity:**\n"
+        f"Last summary: {user_journey.get(user_id, {}).get('last_daily_summary', 'No recent summaries')}"
+    )
+
+
 async def cmd_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Share important context about your condition, medications, or treatment."""
     user_id = update.effective_user.id
