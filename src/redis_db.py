@@ -94,7 +94,7 @@ class RedisDatabase:
             logger.warning("⚠️ Continuing without vector search capabilities")
     
     async def store_message(self, message: Message):
-        """Store a message in Redis with optional embedding"""
+        """Store a message in Redis with optional embedding and archiving"""
         try:
             # Store message data
             message_data = {
@@ -128,8 +128,8 @@ class RedisDatabase:
                 "timestamp": message.timestamp.isoformat()
             }))
             
-            # Trim conversation to last 50 messages
-            await self.redis_client.ltrim(conversation_key, 0, 49)
+            # Trim conversation to last 50 messages (move old ones to archive)
+            await self._archive_old_messages(message.user_id, conversation_key)
             
             # Set TTL for conversation (30 days)
             await self.redis_client.expire(conversation_key, 30 * 24 * 3600)
@@ -140,6 +140,49 @@ class RedisDatabase:
         except Exception as e:
             logger.error(f"❌ Failed to store message: {e}")
             raise
+    
+    async def _archive_old_messages(self, user_id: int, conversation_key: str):
+        """Archive messages that would be trimmed from conversation."""
+        try:
+            # Get messages that would be trimmed (keep only last 50)
+            messages = await self.redis_client.lrange(conversation_key, 50, -1)  # Get messages beyond position 50
+            
+            if messages:
+                archive_key = f"archive:{user_id}"
+                for msg_json in messages:
+                    # Add to archive with extended TTL (90 days)
+                    await self.redis_client.lpush(archive_key, msg_json)
+                
+                # Set longer TTL for archives (90 days vs 30 days)
+                await self.redis_client.expire(archive_key, 90 * 24 * 3600)
+                
+                # Trim conversation to last 50
+                await self.redis_client.ltrim(conversation_key, 0, 49)
+                
+                logger.info(f"📦 Archived {len(messages)} messages for user {user_id}")
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to archive messages: {e}")
+    
+    async def get_archived_messages(self, user_id: int, limit: int = 20) -> List[Dict]:
+        """Retrieve archived messages for a user."""
+        try:
+            archive_key = f"archive:{user_id}"
+            messages = await self.redis_client.lrange(archive_key, 0, limit - 1)
+            
+            archived = []
+            for msg_json in messages:
+                try:
+                    msg_data = json.loads(msg_json)
+                    archived.append(msg_data)
+                except json.JSONDecodeError:
+                    continue
+            
+            return archived
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get archived messages: {e}")
+            return []
     
     async def get_conversation_history(self, user_id: int, limit: int = 10) -> List[Dict]:
         """Get conversation history for a user"""
@@ -162,56 +205,116 @@ class RedisDatabase:
             return []
     
     async def semantic_search(self, user_id: int, query: str, limit: int = 5) -> List[Dict]:
-        """Search for semantically similar messages with fallback"""
+        """Search for semantically similar messages across recent conversation AND archive"""
         try:
             # Check if vector search is enabled
             if not self.vector_search_enabled:
                 logger.info("🔄 Using keyword search fallback (vector search disabled)")
-                return await self._keyword_search(user_id, query, limit)
+                return await self._keyword_search_with_archive(user_id, query, limit)
             
+            # First search recent conversation
+            recent_results = await self._search_recent_vector(user_id, query, limit)
+            
+            # If not enough results, search archive too
+            if len(recent_results) < limit:
+                archive_results = await self._search_archive_keyword(user_id, query, limit - len(recent_results))
+                recent_results.extend(archive_results)
+            
+            return recent_results[:limit]
+            
+        except Exception as e:
+            logger.error(f"❌ Semantic search failed: {e}")
+            return await self._keyword_search_with_archive(user_id, query, limit)
+    
+    async def _search_recent_vector(self, user_id: int, query: str, limit: int) -> List[Dict]:
+        """Search recent conversation using vector search"""
+        try:
             # Generate query embedding
-            try:
-                import numpy as np
-                query_embedding = self.embedding_model.encode(query, convert_to_numpy=True)
-                query_vector = query_embedding.astype(np.float32).tolist()
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to generate query embedding: {e}")
-                return await self._keyword_search(user_id, query, limit)
+            import numpy as np
+            query_embedding = self.embedding_model.encode(query, convert_to_numpy=True)
+            query_vector = query_embedding.astype(np.float32).tolist()
             
             # Perform vector search
             search_query = f"*=>[KNN {limit} @embedding $query_vec]"
             
-            try:
-                result = await self.redis_client.ft("msg_idx").search(
-                    redis.Query(search_query).add_param("query_vec", query_vector).return_fields("content", "message_id", "timestamp")
-                )
-                
-                # Filter by user_id and format results
-                relevant_messages = []
-                for doc in result.docs:
-                    try:
-                        # Get full message data
-                        message_data = await self.redis_client.hgetall(f"message:{doc.message_id}")
-                        if message_data and int(message_data.get("user_id", 0)) == user_id:
-                            relevant_messages.append({
-                                "content": message_data["content"],
-                                "role": message_data["role"],
-                                "timestamp": message_data["timestamp"],
-                                "message_id": message_data["message_id"],
-                                "similarity": 1 - float(doc.__dict__.get("score", 0))  # Convert distance to similarity
-                            })
-                    except Exception as e:
-                        logger.debug(f"Error processing search result: {e}")
-                        continue
-                
-                return relevant_messages[:limit]
-                
-            except Exception as e:
-                logger.warning(f"⚠️ Vector search failed: {e}, falling back to keyword search")
-                return await self._keyword_search(user_id, query, limit)
+            result = await self.redis_client.ft("msg_idx").search(
+                redis.Query(search_query).add_param("query_vec", query_vector).return_fields("content", "message_id", "timestamp")
+            )
+            
+            # Filter by user_id and format results
+            relevant_messages = []
+            for doc in result.docs:
+                try:
+                    # Get full message data
+                    message_data = await self.redis_client.hgetall(f"message:{doc.message_id}")
+                    if message_data and int(message_data.get("user_id", 0)) == user_id:
+                        relevant_messages.append({
+                            "content": message_data["content"],
+                            "role": message_data["role"],
+                            "timestamp": message_data["timestamp"],
+                            "message_id": message_data["message_id"],
+                            "source": "recent",
+                            "similarity": 1 - float(doc.__dict__.get("score", 0))  # Convert distance to similarity
+                        })
+                except Exception as e:
+                    logger.debug(f"Error processing search result: {e}")
+                    continue
+            
+            return relevant_messages[:limit]
             
         except Exception as e:
-            logger.error(f"❌ Semantic search failed: {e}")
+            logger.warning(f"⚠️ Vector search failed: {e}")
+            return []
+    
+    async def _search_archive_keyword(self, user_id: int, query: str, limit: int) -> List[Dict]:
+        """Search archived messages using keyword matching"""
+        try:
+            archive_key = f"archive:{user_id}"
+            archived_messages = await self.redis_client.lrange(archive_key, 0, -1)
+            
+            archive_results = []
+            query_lower = query.lower()
+            
+            for msg_json in archived_messages:
+                try:
+                    msg_data = json.loads(msg_json)
+                    content = msg_data.get("content", "").lower()
+                    
+                    # Simple keyword matching
+                    if any(word in content for word in query_lower.split() if len(word) > 2):
+                        archive_results.append({
+                            "content": msg_data.get("content", ""),
+                            "role": msg_data.get("role", ""),
+                            "timestamp": msg_data.get("timestamp", ""),
+                            "source": "archive",
+                            "similarity": 0.7  # Default score for keyword matches
+                        })
+                except json.JSONDecodeError:
+                    continue
+            
+            # Sort by timestamp (most recent first) and limit
+            archive_results.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+            return archive_results[:limit]
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Archive search failed: {e}")
+            return []
+    
+    async def _keyword_search_with_archive(self, user_id: int, query: str, limit: int) -> List[Dict]:
+        """Keyword search across both recent and archived messages"""
+        try:
+            # Search recent first
+            recent_results = await self._keyword_search(user_id, query, limit)
+            
+            # If not enough results, search archive
+            if len(recent_results) < limit:
+                archive_results = await self._search_archive_keyword(user_id, query, limit - len(recent_results))
+                recent_results.extend(archive_results)
+            
+            return recent_results[:limit]
+            
+        except Exception as e:
+            logger.error(f"❌ Keyword search with archive failed: {e}")
             return []
     
     async def _keyword_search(self, user_id: int, query: str, limit: int = 5) -> List[Dict]:
@@ -454,6 +557,18 @@ class DatabaseManager:
                 self.use_redis = False
         
         return await self.fallback.get_user_preference(user_id, key)
+    
+    async def get_archived_messages(self, user_id: int, limit: int = 20) -> List[Dict]:
+        """Get archived messages with fallback"""
+        if self.use_redis:
+            try:
+                return await self.redis_db.get_archived_messages(user_id, limit)
+            except Exception as e:
+                logger.warning(f"⚠️ Redis archive get failed: {e}, using fallback")
+                self.use_redis = False
+        
+        # Fallback: return empty list (in-memory doesn't have archives)
+        return []
     
     async def clear_conversation(self, user_id: int):
         """Clear conversation with fallback"""

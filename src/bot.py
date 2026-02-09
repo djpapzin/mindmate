@@ -32,6 +32,29 @@ except ImportError:
 INSTANCE_ID = str(uuid.uuid4())[:8]
 
 # =============================================================================
+# Helper Functions
+# =============================================================================
+
+def escape_markdown_v2(text: str) -> str:
+    """Escape special characters for Telegram MarkdownV2 format."""
+    # Characters that need to be escaped in MarkdownV2
+    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    for char in special_chars:
+        text = text.replace(char, f'\\{char}')
+    return text
+
+def send_markdown_message(update: Update, text: str) -> None:
+    """Send a message with markdown formatting, handling special characters."""
+    # For now, use HTML parsing which is more forgiving than MarkdownV2
+    # Convert common markdown to HTML equivalents
+    html_text = (
+        text.replace('**', '<b>').replace('**', '</b>')
+             .replace('*', '<i>').replace('*', '</i>')
+             .replace('`', '<code>').replace('`', '</code>')
+    )
+    return update.message.reply_text(html_text, parse_mode='HTML')
+
+# =============================================================================
 # Configuration
 # =============================================================================
 
@@ -402,6 +425,7 @@ async def lifespan(app: FastAPI):
         telegram_app.add_handler(CommandHandler("journey", cmd_journey))
         telegram_app.add_handler(CommandHandler("journal", cmd_journal))
         telegram_app.add_handler(CommandHandler("schedule", cmd_schedule))
+        telegram_app.add_handler(CommandHandler("archive", cmd_archive))
         telegram_app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
         telegram_app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image_document))
         telegram_app.add_handler(MessageHandler(filters.Document.PDF | filters.Document.TEXT, handle_document))
@@ -1075,7 +1099,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await add_to_history(user_id, "user", message)
         await add_to_history(user_id, "assistant", reply)
         
-        await update.message.reply_text(reply)
+        await send_markdown_message(update, reply)
         logger.info(f"Responded to user {user_id}")
         
     except OpenAIError as e:
