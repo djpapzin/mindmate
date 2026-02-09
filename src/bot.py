@@ -439,7 +439,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(WELCOME_MESSAGE)
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(HELP_MESSAGE, parse_mode="Markdown")
+    await update.message.reply_text(HELP_MESSAGE)
 
 async def cmd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show current mode and model assignment."""
@@ -464,7 +464,6 @@ async def cmd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "🔒 **Standard Mode: ACTIVE**\n\n"
             "You're using the standard MindMate experience.\n\n"
             f"User ID: `{user_id}`",
-            parse_mode="Markdown"
         )
 
 async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -487,7 +486,6 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"**Current model:** `{current}`\n\n"
             f"**Available models:**\n{models_list}\n\n"
             f"**Usage:** `/model 4.1-mini`",
-            parse_mode="Markdown"
         )
         return
     
@@ -502,13 +500,11 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"✅ Switched to **{new_model}**\n\n"
             f"History cleared for fresh comparison.\n"
             f"Start chatting to test this model!",
-            parse_mode="Markdown"
         )
     else:
         await update.message.reply_text(
             f"❌ Unknown model: `{model_key}`\n\n"
             f"Available: {', '.join(AVAILABLE_MODELS.keys())}",
-            parse_mode="Markdown"
         )
 
 
@@ -541,10 +537,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 "💙 I hear you, and I'm here for you. If you're in immediate danger, "
                 "please reach out: SADAG 0800 567 567 (24/7)\n\n"
                 "Now, tell me more about what's going on...",
-                parse_mode="Markdown"
             )
         else:
-            await update.message.reply_text(CRISIS_RESPONSE, parse_mode="Markdown")
+            await update.message.reply_text(CRISIS_RESPONSE)
             return
     
     if not openai_client:
@@ -599,7 +594,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             logger.error(f"OpenAI client not initialized for user {user_id}")
             await update.message.reply_text(
                 "❌ Voice service is temporarily unavailable. Please try again later.",
-                parse_mode="Markdown"
             )
             return
         
@@ -666,7 +660,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 logger.error(f"Empty response from OpenAI for user {user_id}")
                 await update.message.reply_text(
                     "❌ I didn't get a proper response. Please try again.",
-                    parse_mode="Markdown"
                 )
                 return
             
@@ -688,7 +681,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 logger.error(f"Failed to generate voice response for user {user_id}")
                 await update.message.reply_text(
                     f"💬 **Text Response:**\n\n{response_text}",
-                    parse_mode="Markdown"
                 )
                 return
             
@@ -705,14 +697,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     await update.message.reply_voice(
                         voice=voice_file,
                         caption=caption_text,
-                        parse_mode="Markdown"
                     )
                 else:
                     # Response too long - send voice + split text messages
                     await update.message.reply_voice(
                         voice=voice_file,
                         caption="🎤 **Full response below:**",
-                        parse_mode="Markdown"
                     )
                     
                     # Split long text into multiple messages (Telegram limit: 4096 chars)
@@ -725,7 +715,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         logger.error(f"OpenAI error processing voice for user {user_id}: {e}")
         await update.message.reply_text(
             "❌ Voice processing failed. Please try again.",
-            parse_mode="Markdown"
         )
         return
 
