@@ -237,6 +237,7 @@ HELP_MESSAGE = """**How I can support you:**
 • Send me a message about how you're feeling
 • Ask for journaling prompts or reflection questions
 • Learn about stress management
+• Share photos/documents - I'll analyze if relevant to your care
 
 **Commands:**
 /start - Start fresh conversation
@@ -244,6 +245,8 @@ HELP_MESSAGE = """**How I can support you:**
 /help - Show this message
 /mode - Show your current mode and model
 /context - Share important info about your condition/meds (Personal Mode only)
+/confirm - Confirm saving the last uploaded file to memory
+/decline - Decline saving the last uploaded file
 
 Remember: I'm here to support, not replace professional help. 💙"""
 
@@ -259,6 +262,9 @@ bot_running = False
 # Message deduplication to prevent double responses during deployments
 processed_messages: set[int] = set()
 MAX_PROCESSED_MESSAGES = 1000  # Keep last 1000 message IDs
+
+# Pending context for user confirmation
+pending_context: dict[int, dict] = {}
 
 # Available models for A/B testing
 AVAILABLE_MODELS = {
@@ -335,6 +341,8 @@ async def lifespan(app: FastAPI):
         telegram_app.add_handler(CommandHandler("mode", cmd_mode))
         telegram_app.add_handler(CommandHandler("model", cmd_model))
         telegram_app.add_handler(CommandHandler("context", cmd_context))
+        telegram_app.add_handler(CommandHandler("confirm", cmd_confirm))
+        telegram_app.add_handler(CommandHandler("decline", cmd_decline))
         telegram_app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
         telegram_app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image_document))
         telegram_app.add_handler(MessageHandler(filters.Document.PDF | filters.Document.TEXT, handle_document))
@@ -781,12 +789,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def handle_image_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle images and documents - automatically learn from them for Personal Mode users."""
+    """Handle images and documents - analyze relevance and ask user confirmation."""
     user_id = update.effective_user.id
     personal_mode = is_personal_mode(user_id)
     
     if not personal_mode:
-        await update.message.reply_text("I can only learn from documents in Personal Mode.")
+        await update.message.reply_text("I can only analyze files in Personal Mode.")
         return
     
     try:
@@ -796,31 +804,52 @@ async def handle_image_document(update: Update, context: ContextTypes.DEFAULT_TY
             photo = update.message.photo[-1]  # Get highest resolution
             file = await context.bot.get_file(photo.file_id)
             file_info = f"Photo: {file.file_path}"
+            is_photo = True
         else:
             # Handle document image
             document = update.message.document
             file = await context.bot.get_file(document.file_id)
             file_info = f"Document: {document.file_name}"
+            is_photo = False
         
         # Download file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg" if is_photo else ".pdf") as temp_file:
             await file.download_to_drive(temp_file.name)
             
-            # For now, just acknowledge and add to context
-            # In future, we could use OCR or vision API to analyze content
-            context_message = f"User shared {file_info} - this is important context about their condition/treatment"
-            add_to_history(user_id, "system", context_message)
+            # Analyze content for bipolar relevance
+            if is_photo:
+                relevance_result = await analyze_image_relevance(temp_file.name, openai_client)
+            else:
+                relevance_result = await analyze_document_relevance(temp_file.name, document.file_name)
             
-            await update.message.reply_text(
-                f"📸 **Got it!** I've saved this {file_info.split(':')[0].lower()} for context.\n\n"
-                f"💡 This helps me better understand your situation and provide more personalized support."
-            )
+            # Handle based on relevance
+            if relevance_result["is_relevant"]:
+                await update.message.reply_text(
+                    f"🏥 **Relevant content detected!**\n\n"
+                    f"{relevance_result['description']}\n\n"
+                    f"Should I remember this for future conversations about your bipolar management?"
+                )
+                # Store temporarily for user confirmation
+                store_pending_context(user_id, file_info, relevance_result["description"])
+            elif relevance_result["is_unsure"]:
+                await update.message.reply_text(
+                    f"🤔 **Not sure if this is relevant.**\n\n"
+                    f"{relevance_result['description']}\n\n"
+                    f"Should I remember this for your bipolar support?"
+                )
+                # Store temporarily for user confirmation
+                store_pending_context(user_id, file_info, relevance_result["description"])
+            else:
+                await update.message.reply_text(
+                    f"� **Nice photo!** This doesn't seem related to your bipolar management, so I won't save it to memory.\n\n"
+                    f"If you want me to remember something specific about it, just tell me!"
+                )
             
-            logger.info(f"User {user_id} shared {file_info}")
+            logger.info(f"User {user_id} shared {file_info} - relevance: {relevance_result['is_relevant']}")
             
     except Exception as e:
         logger.error(f"Error processing image/document for user {user_id}: {e}")
-        await update.message.reply_text("❌ I had trouble processing that file. Please try again.")
+        await update.message.reply_text("❌ I had trouble analyzing that file. Please try again.")
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
