@@ -257,8 +257,9 @@ HELP_MESSAGE = """**How I can support you:**
 /help - Show this message
 /mode - Show your current mode and model
 /context - Share important info about your condition/meds (Personal Mode only)
-/confirm - Confirm saving the last uploaded file to memory
-/decline - Decline saving the last uploaded file
+/confirm - Confirm saving of last uploaded file to memory
+/decline - Decline saving of last uploaded file
+/journey - Show your journey tracking and what I've learned about you
 
 Remember: I'm here to support, not replace professional help. 💙"""
 
@@ -277,6 +278,9 @@ MAX_PROCESSED_MESSAGES = 1000  # Keep last 1000 message IDs
 
 # Pending context for user confirmation
 pending_context: dict[int, dict] = {}
+
+# User journey tracking for continuity of care
+user_journey: dict[int, dict] = {}
 
 # Available models for A/B testing
 AVAILABLE_MODELS = {
@@ -355,6 +359,7 @@ async def lifespan(app: FastAPI):
         telegram_app.add_handler(CommandHandler("context", cmd_context))
         telegram_app.add_handler(CommandHandler("confirm", cmd_confirm))
         telegram_app.add_handler(CommandHandler("decline", cmd_decline))
+        telegram_app.add_handler(CommandHandler("journey", cmd_journey))
         telegram_app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
         telegram_app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image_document))
         telegram_app.add_handler(MessageHandler(filters.Document.PDF | filters.Document.TEXT, handle_document))
@@ -449,6 +454,63 @@ async def webhook(request: Request):
 
 def get_history(user_id: int) -> list[dict[str, str]]:
     return conversation_history.get(user_id, [])
+
+def store_pending_context(user_id: int, file_info: str, description: str) -> None:
+    """Store context temporarily waiting for user confirmation."""
+    pending_context[user_id] = {
+        "file_info": file_info,
+        "description": description,
+        "timestamp": datetime.now().isoformat()
+    }
+
+def update_user_journey(user_id: int, key: str, value: str) -> None:
+    """Update user's journey tracking for continuity of care."""
+    if user_id not in user_journey:
+        user_journey[user_id] = {
+            "diagnosis_status": "unknown",
+            "medication_status": "unknown", 
+            "doctor_visits": "unknown",
+            "therapy_status": "unknown",
+            "family_support": "unknown",
+            "living_situation": "unknown",
+            "last_mood_episode": "unknown",
+            "medication_adherence": "unknown",
+            "crisis_history": [],
+            "progress_notes": [],
+            "last_updated": datetime.now().isoformat()
+        }
+    
+    user_journey[user_id][key] = value
+    user_journey[user_id]["last_updated"] = datetime.now().isoformat()
+    logger.info(f"Updated journey for user {user_id}: {key} = {value}")
+
+def get_user_journey_summary(user_id: int) -> str:
+    """Get formatted summary of user's journey for context."""
+    if user_id not in user_journey:
+        return "No journey information available."
+    
+    journey = user_journey[user_id]
+    summary_parts = []
+    
+    if journey.get("diagnosis_status") != "unknown":
+        summary_parts.append(f"Diagnosis: {journey['diagnosis_status']}")
+
+    if journey.get("medication_status") != "unknown":
+        summary_parts.append(f"Medication: {journey['medication_status']}")
+
+    if journey.get("doctor_visits") != "unknown":
+        summary_parts.append(f"Doctor visits: {journey['doctor_visits']}")
+
+    if journey.get("therapy_status") != "unknown":
+        summary_parts.append(f"Therapy: {journey['therapy_status']}")
+
+    if journey.get("family_support") != "unknown":
+        summary_parts.append(f"Family support: {journey['family_support']}")
+
+    if journey.get("living_situation") != "unknown":
+        summary_parts.append(f"Living situation: {journey['living_situation']}")
+
+    return " | ".join(summary_parts) if summary_parts else "Building understanding of your situation..."
 
 def add_to_history(user_id: int, role: str, content: str) -> None:
     if user_id not in conversation_history:
