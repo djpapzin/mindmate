@@ -260,6 +260,8 @@ HELP_MESSAGE = """**How I can support you:**
 /confirm - Confirm saving of last uploaded file to memory
 /decline - Decline saving of last uploaded file
 /journey - Show your journey tracking and what I've learned about you
+/journal - Daily journaling and mood tracking
+/schedule - Set up automated daily journaling reminders
 
 Remember: I'm here to support, not replace professional help. 💙"""
 
@@ -281,6 +283,10 @@ pending_context: dict[int, dict] = {}
 
 # User journey tracking for continuity of care
 user_journey: dict[int, dict] = {}
+
+# Daily journaling and scheduling
+daily_journals: dict[int, list[dict]] = {}
+scheduled_messages: dict[int, list] = {}
 
 # Available models for A/B testing
 AVAILABLE_MODELS = {
@@ -360,6 +366,8 @@ async def lifespan(app: FastAPI):
         telegram_app.add_handler(CommandHandler("confirm", cmd_confirm))
         telegram_app.add_handler(CommandHandler("decline", cmd_decline))
         telegram_app.add_handler(CommandHandler("journey", cmd_journey))
+        telegram_app.add_handler(CommandHandler("journal", cmd_journal))
+        telegram_app.add_handler(CommandHandler("schedule", cmd_schedule))
         telegram_app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
         telegram_app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image_document))
         telegram_app.add_handler(MessageHandler(filters.Document.PDF | filters.Document.TEXT, handle_document))
@@ -529,8 +537,6 @@ def clear_history(user_id: int) -> None:
 def detect_crisis(message: str) -> bool:
     message_lower = message.lower()
     return any(keyword in message_lower for keyword in CRISIS_KEYWORDS)
-
-# =============================================================================
 # Telegram Bot Handlers
 # =============================================================================
 
