@@ -596,6 +596,120 @@ This transforms the bot from reactive to proactive mental health management, pro
 
 ---
 
+### 🗑️ Message Editing & Deletion (NEW PRIORITY)
+
+**Status:** 🔜 Next Priority  
+**Timeline:** 4-6 weeks  
+**Goal:** Allow users to edit/delete messages and sync changes across platforms
+
+#### Feature Overview
+Implement message editing and deletion capabilities that sync across Telegram, WhatsApp, and database to maintain conversation integrity.
+
+#### How It Works
+| Feature | Description |
+|----------|-------------|
+| **Message Editing** | Users can edit sent messages within 5 minutes |
+| **Message Deletion** | Users can delete their own messages |
+| **Cross-Platform Sync** | Edits/deletes sync across Telegram, WhatsApp, database |
+| **Data Cleanup** | Remove deleted content from AI training context |
+| **Edit History** | Track what was changed for transparency |
+
+#### Technical Implementation
+```python
+# Message editing handler
+async def handle_message_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle message edits and sync across platforms."""
+    
+    if update.edited_message:
+        user_id = update.effective_user.id
+        original_text = update.edited_message.text
+        new_text = update.edited_message.text
+        
+        # Update database records
+        await update_message_in_database(
+            user_id, 
+            message_id=update.edited_message.message_id,
+            new_content=new_text,
+            original_content=original_text,
+            edit_timestamp=datetime.now()
+        )
+        
+        # Remove old message from AI context
+        await remove_from_conversation_history(user_id, original_text)
+        
+        # Add new message to AI context
+        await add_to_history(user_id, "user", new_text)
+        
+        # Log for transparency
+        logger.info(f"User {user_id} edited message: {original_text[:50]} -> {new_text[:50]}")
+
+# Message deletion handler
+async def handle_message_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle message deletions and clean up data."""
+    
+    if update.message is None:  # Message was deleted
+        user_id = update.effective_user.id
+        
+        # Get deleted message details from database
+        deleted_msg = await get_deleted_message_details(user_id, update.update_id)
+        
+        if deleted_msg:
+            # Remove from AI conversation context
+            await remove_from_conversation_history(user_id, deleted_msg.content)
+            
+            # Mark as deleted in database (keep for audit trail)
+            await mark_message_deleted(user_id, deleted_msg.message_id)
+            
+            # Clean up any AI responses to this message
+            await cleanup_ai_responses(user_id, deleted_msg.message_id)
+            
+            logger.info(f"User {user_id} deleted message: {deleted_msg.content[:50]}")
+```
+
+#### Cross-Platform Synchronization
+| Platform | Sync Method |
+|----------|-------------|
+| **Telegram** | Native edit/delete events |
+| **WhatsApp** | Twilio webhook edit/delete handling |
+| **Database** | Real-time record updates |
+| **AI Context** | Remove old, add new content |
+
+#### User Experience
+```
+User sends: "I'm feeling really anxious today"
+[2 minutes later] User edits: "I'm feeling anxious about work"
+
+System Response:
+✅ Message updated in conversation
+🔄 AI context refreshed with new content
+📝 Edit history logged for transparency
+
+User deletes: "I shouldn't have said that"
+System Response:
+🗑️ Message removed from conversation
+🧹 AI context cleaned up
+📊 Deletion logged for audit trail
+```
+
+#### Privacy & Safety Features
+- **Edit Time Window**: Only allow edits within 5 minutes of sending
+- **Deletion Confirmation**: Optional confirmation before permanent deletion
+- **Audit Trail**: Keep edit/delete history (not content, just metadata)
+- **AI Context Cleanup**: Automatically remove deleted content from AI memory
+- **Cross-Platform Privacy**: Delete from all platforms simultaneously
+
+#### Benefits for Keleh
+- **Privacy Control**: Remove sensitive information if shared accidentally
+- **Accuracy**: Correct typos or clarify statements
+- **Safety**: Remove regrettable messages from AI training data
+- **Consistency**: Same experience across Telegram and WhatsApp
+- **Transparency**: See what was changed and when
+
+#### Priority: High
+Essential for user privacy, data control, and maintaining trust in AI relationship with users.
+
+---
+
 ### Phase 3: Personalization (v2.5) 🎨
 **Timeline:** 4-6 weeks  
 **Goal:** Make each conversation feel personal and relevant
