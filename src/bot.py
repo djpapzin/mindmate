@@ -19,8 +19,14 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import uvicorn
 
-# Import Redis database module
-from redis_db import DatabaseManager, Message
+# Import Redis database module (with fallback)
+try:
+    from redis_db import DatabaseManager, Message
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+    DatabaseManager = None
+    Message = None
 
 # Unique instance ID to help debug multiple instances
 INSTANCE_ID = str(uuid.uuid4())[:8]
@@ -492,11 +498,11 @@ async def webhook(request: Request):
 # Conversation History
 # =============================================================================
 
-def get_history(user_id: int) -> list[dict[str, str]]:
+async def get_history(user_id: int) -> list[dict[str, str]]:
     """Get conversation history for a user from Redis or fallback."""
     if db_manager:
         try:
-            return asyncio.run(db_manager.get_conversation_history(user_id, MAX_HISTORY_LENGTH))
+            return await db_manager.get_conversation_history(user_id, MAX_HISTORY_LENGTH)
         except Exception as e:
             logger.warning(f"Failed to get history from Redis: {e}")
     
@@ -1052,7 +1058,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     try:
         messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(get_history(user_id))
+        history = await get_history(user_id)
+        messages.extend(history)
         messages.append({"role": "user", "content": message})
         
         response = openai_client.chat.completions.create(
@@ -1279,7 +1286,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await add_to_history(user_id, "user", transcribed_text)
             
             # Get conversation history
-            history = get_history(user_id)
+            history = await get_history(user_id)
             
             # Generate response
             system_prompt = get_personal_mode_prompt(user_id) if personal_mode else SYSTEM_PROMPT
