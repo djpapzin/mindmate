@@ -51,7 +51,10 @@ PERSONAL_MODE_USERS = {
 - Location: South Africa
 - Key focus areas: Relationships, Finances, Bipolar management, Emotional intelligence
 - Communication style: Direct, honest, no sugarcoating""",
+        "model": "gpt-4.1-mini",  # Premium model for DJ
     },
+    # Keleh will be added here when her user ID is known
+    # Example: 123456789: { "name": "Keleh", "model": "gpt-4.1-mini" }
     7013163582: {  # New user - onboarding mode
         "name": None,  # Will learn through conversation
         "context": """**About this user:**
@@ -60,6 +63,7 @@ PERSONAL_MODE_USERS = {
 - Gently learn what kind of support they're looking for
 - Be curious and caring as you get to know them
 - Remember what they share and reference it naturally""",
+        "model": "gpt-4o-mini",  # Standard model for new users
     },
 }
 
@@ -250,6 +254,13 @@ VOICE_TTS_MODEL = "gpt-4o-mini-tts"
 
 def get_user_model(user_id: int) -> str:
     """Get the model selected by user, or default."""
+    # Check if user has a specific model assigned (for Personal Mode users)
+    if user_id in PERSONAL_MODE_USERS:
+        assigned_model = PERSONAL_MODE_USERS[user_id].get("model")
+        if assigned_model:
+            return assigned_model
+    
+    # Fall back to user's selected model or default
     return user_model_selection.get(user_id, DEFAULT_MODEL)
 
 def set_user_model(user_id: int, model: str) -> None:
@@ -434,20 +445,22 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(HELP_MESSAGE, parse_mode="Markdown")
 
 async def cmd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show current mode status."""
+    """Show current mode and model assignment."""
     user_id = update.effective_user.id
     personal_mode = is_personal_mode(user_id)
+    current_model = get_user_model(user_id)
     
     if personal_mode:
+        user_info = PERSONAL_MODE_USERS[user_id]
+        name = user_info.get("name", "Personal User")
+        assigned_model = user_info.get("model", "Auto-assigned")
+        
         await update.message.reply_text(
-            "🔓 **Personal Mode: ACTIVE**\n\n"
-            "You have access to:\n"
-            "• Direct, honest advice\n"
-            "• No AI disclaimers\n"
-            "• Personal therapist experience\n"
-            "• Softer crisis handling\n\n"
-            f"User ID: `{user_id}`",
-            parse_mode="Markdown"
+            f"👤 **Personal Mode Active**\n\n"
+            f"**User:** {name}\n"
+            f"**Model:** `{current_model}`\n"
+            f"**Assignment:** {'Premium' if assigned_model == 'gpt-4.1-mini' else 'Standard'}\n\n"
+            f"🎯 You have access to personalized context and premium model support."
         )
     else:
         await update.message.reply_text(
