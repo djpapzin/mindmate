@@ -287,6 +287,7 @@ user_journey: dict[int, dict] = {}
 # Daily journaling and scheduling
 daily_journals: dict[int, list[dict]] = {}
 scheduled_messages: dict[int, list] = {}
+daily_summary_tracking: dict[int, dict] = {}  # Track scheduled message context
 
 # Available models for A/B testing
 AVAILABLE_MODELS = {
@@ -677,6 +678,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     message = update.message.text
     personal_mode = is_personal_mode(user_id)
     
+    # Check if this is a reply to a scheduled daily summary message
+    if user_id in daily_summary_tracking and daily_summary_tracking[user_id].get("waiting_for_summary"):
+        # This is a reply to our 6pm daily summary request
+        await handle_daily_summary_response(update, context, user_id, message)
+        return
+    
     # Crisis detection (still active in Personal Mode, but less aggressive)
     if detect_crisis(message):
         logger.warning(f"Crisis detected - user {user_id}")
@@ -730,6 +737,103 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as e:
         logger.error(f"Error: {e}")
         await update.message.reply_text("Something went wrong. Please try again.")
+
+
+async def handle_daily_summary_response(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, message: str) -> None:
+    """Handle response to daily summary request with smart filtering."""
+    
+    # Check if user wants to postpone or skip
+    postpone_keywords = ["busy", "later", "not now", "can't", "cannot", "postpone", "skip", "not today", "tomorrow"]
+    message_lower = message.lower()
+    
+    if any(keyword in message_lower for keyword in postpone_keywords):
+        # User wants to postpone
+        daily_summary_tracking[user_id]["waiting_for_summary"] = False
+        
+        await update.message.reply_text(
+            f"👍 **No problem!** I understand you're busy right now.\n\n"
+            f"💡 Just send me your daily summary whenever you're ready, or I'll check in again tomorrow at 6pm.\n\n"
+            f"Take care! 💙"
+        )
+        
+        # Update journey tracking
+        update_user_journey(user_id, "journaling_pattern", "Sometimes busy, flexible schedule")
+        return
+    
+    # This looks like a daily summary - save it
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    # Initialize user's journal if not exists
+    if user_id not in daily_journals:
+        daily_journals[user_id] = {}
+    
+    if today not in daily_journals[user_id]:
+        daily_journals[user_id][today] = []
+    
+    # Add the summary as today's main entry
+    daily_journals[user_id][today].append({
+        "timestamp": datetime.now().isoformat(),
+        "entry": message,
+        "type": "daily_summary",
+        "mood": None,  # Will be analyzed from content
+        "plan_tomorrow": None  # Will be extracted from content
+    })
+    
+    # Clear the waiting flag
+    daily_summary_tracking[user_id]["waiting_for_summary"] = False
+    
+    # Update journey tracking
+    update_user_journey(user_id, "last_daily_summary", today)
+    update_user_journey(user_id, "journaling_habit", "Active - responds to daily prompts")
+    
+    await update.message.reply_text(
+        f"✅ **Daily Summary Saved!**\n\n"
+        f"Thanks for sharing your day with me. Your summary has been recorded for {today}.\n\n"
+        f"💡 This helps me understand your patterns and provide better support. "
+        f"I'll check in again tomorrow at 6pm!\n\n"
+        f"🌙 Sweet dreams and talk to you tomorrow! 💙"
+    )
+    
+    logger.info(f"User {user_id} submitted daily summary for {today}")
+
+
+async def send_scheduled_daily_summary(user_id: int) -> None:
+    """Send the 6pm daily summary request and track the response."""
+    
+    # Set tracking flag
+    if user_id not in daily_summary_tracking:
+        daily_summary_tracking[user_id] = {}
+    
+    daily_summary_tracking[user_id] = {
+        "waiting_for_summary": True,
+        "sent_time": datetime.now().isoformat(),
+        "message_id": None  # Will be set when message is sent
+    }
+    
+    # Send the daily summary request
+    try:
+        message = await telegram_app.bot.send_message(
+            chat_id=user_id,
+            text=(
+                f"🌅 **Good evening! It's 6pm - Daily Summary Time!**\n\n"
+                f"How was your day today? Take a moment to reflect and share:\n\n"
+                f"• What happened today?\n"
+                f"• How are you feeling?\n"
+                f"• What are your plans for tomorrow?\n\n"
+                f"💡 Just reply to this message with your thoughts - no commands needed!\n\n"
+                f"📔 I'll save this as your daily journal entry."
+            )
+        )
+        
+        # Store the message ID for tracking
+        daily_summary_tracking[user_id]["message_id"] = message.message_id
+        
+        logger.info(f"Sent daily summary request to user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Failed to send daily summary to user {user_id}: {e}")
+        # Reset tracking on failure
+        daily_summary_tracking[user_id]["waiting_for_summary"] = False
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
