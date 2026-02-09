@@ -57,9 +57,25 @@ PERSONAL_MODE_USERS = {
         "name": "Keleh",
         "context": """**About this user:**
 - Name: Keleh
+- **CRITICAL: User has BIPOLAR DISORDER - this is her primary concern**
 - Key focus areas: Bipolar management, emotional regulation, mood stability
 - Communication style: Warm, supportive, needs gentle guidance
-- Prefers empathetic responses over direct advice""",
+- Prefers empathetic responses over direct advice
+
+**IMPORTANT FOR BIPOLAR SUPPORT:**
+- ALWAYS acknowledge and validate her bipolar experience
+- NEVER brush off or minimize her concerns about bipolar
+- Ask about mood patterns, medication effects, sleep patterns
+- Help identify triggers and early warning signs
+- Provide specific coping strategies for bipolar episodes
+- Discuss both manic and depressive symptoms
+- Support medication adherence and side effect management
+
+**DO NOT:**
+- Give generic advice that ignores her bipolar condition
+- Say "everyone feels that way" or minimize her experience
+- Ignore medication or treatment discussions
+- Provide one-size-fits-all wellness advice""",
         "model": "gpt-4.1-mini",  # Premium model for Keleh
     },
 }
@@ -217,6 +233,8 @@ HELP_MESSAGE = """**How I can support you:**
 /start - Start fresh conversation
 /clear - Clear conversation history
 /help - Show this message
+/mode - Show your current mode and model
+/context - Share important info about your condition/meds (Personal Mode only)
 
 Remember: I'm here to support, not replace professional help. 💙"""
 
@@ -307,6 +325,7 @@ async def lifespan(app: FastAPI):
         telegram_app.add_handler(CommandHandler("clear", cmd_clear))
         telegram_app.add_handler(CommandHandler("mode", cmd_mode))
         telegram_app.add_handler(CommandHandler("model", cmd_model))
+        telegram_app.add_handler(CommandHandler("context", cmd_context))
         telegram_app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
         telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         telegram_app.add_error_handler(error_handler)
@@ -505,6 +524,37 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
             f"❌ Unknown model: `{model_key}`\n\n"
             f"Available: {', '.join(AVAILABLE_MODELS.keys())}",
+        )
+
+
+async def cmd_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Share important context about your condition, medications, or treatment."""
+    user_id = update.effective_user.id
+    
+    if not is_personal_mode(user_id):
+        await update.message.reply_text("This feature is only available in Personal Mode.")
+        return
+    
+    if context.args:
+        # Add context: /context "I take Lithium 300mg twice daily for bipolar"
+        context_text = " ".join(context.args)
+        
+        # Add to conversation history as a system message for immediate context
+        add_to_history(user_id, "system", f"IMPORTANT USER CONTEXT: {context_text}")
+        
+        await update.message.reply_text(
+            f"✅ **Context saved!** I'll remember this for our conversations.\n\n"
+            f"💡 This helps me provide better, more personalized support."
+        )
+        logger.info(f"User {user_id} added context: {context_text}")
+    else:
+        await update.message.reply_text(
+            "💡 **Share important context about yourself:**\n\n"
+            f"• `/context I have bipolar disorder` - Share your condition\n"
+            f"• `/context I take Lithium 300mg daily` - Share medications\n"
+            f"• `/context I struggle with sleep during manic episodes` - Share patterns\n"
+            f"• `/context My therapist is Dr. Smith` - Share treatment info\n\n"
+            f"This helps me provide better, personalized support!"
         )
 
 
