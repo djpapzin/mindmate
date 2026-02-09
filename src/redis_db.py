@@ -1,6 +1,6 @@
 """
 Redis Database Module for MindMate Bot
-Handles persistent storage, vector search, and semantic memory
+Handles persistent storage with fallback for vector search
 """
 
 import json
@@ -8,8 +8,6 @@ import asyncio
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 import redis.asyncio as redis
-from sentence_transformers import SentenceTransformer
-import numpy as np
 import os
 from dataclasses import dataclass
 import logging
@@ -26,36 +24,46 @@ class Message:
     message_id: str
 
 class RedisDatabase:
-    """Redis database manager with vector search capabilities"""
+    """Redis database manager with basic storage capabilities"""
     
     def __init__(self, redis_url: str, embedding_model: str = "all-MiniLM-L6-v2"):
         self.redis_url = redis_url
         self.embedding_model_name = embedding_model
         self.redis_client = None
-        self.embedding_model = None
-        self.vector_dimension = 384  # all-MiniLM-L6-v2 dimension
+        self.vector_search_enabled = False
         
     async def connect(self):
-        """Initialize Redis connection and embedding model"""
+        """Initialize Redis connection"""
         try:
             self.redis_client = redis.from_url(self.redis_url, decode_responses=True)
             # Test connection
             await self.redis_client.ping()
             logger.info("✅ Redis connected successfully")
             
-            # Initialize embedding model
-            self.embedding_model = SentenceTransformer(self.embedding_model_name)
-            logger.info(f"✅ Embedding model loaded: {self.embedding_model_name}")
-            
-            # Create vector index for semantic search
-            await self._create_vector_index()
+            # Try to initialize embedding model (optional)
+            try:
+                from sentence_transformers import SentenceTransformer
+                import numpy as np
+                self.embedding_model = SentenceTransformer(self.embedding_model_name)
+                self.vector_dimension = 384
+                self.vector_search_enabled = True
+                logger.info(f"✅ Vector search enabled: {self.embedding_model_name}")
+                
+                # Create vector index for semantic search
+                await self._create_vector_index()
+            except ImportError:
+                logger.warning("⚠️ Vector search disabled (sentence-transformers not available)")
+                logger.info("🔄 Using keyword search fallback")
             
         except Exception as e:
-            logger.error(f"❌ Failed to connect to Redis: {e}")
+            logger.error(f"❌ Redis connection failed: {e}")
             raise
     
     async def _create_vector_index(self):
         """Create RediSearch vector index for semantic search"""
+        if not self.vector_search_enabled:
+            return
+            
         try:
             # Drop existing index if it exists
             try:
@@ -86,21 +94,26 @@ class RedisDatabase:
             logger.warning("⚠️ Continuing without vector search capabilities")
     
     async def store_message(self, message: Message):
-        """Store a message in Redis with embedding"""
+        """Store a message in Redis with optional embedding"""
         try:
-            # Generate embedding
-            embedding = self.embedding_model.encode(message.content, convert_to_numpy=True)
-            embedding_list = embedding.astype(np.float32).tolist()
-            
             # Store message data
             message_data = {
                 "user_id": message.user_id,
                 "content": message.content,
                 "role": message.role,
                 "timestamp": message.timestamp.isoformat(),
-                "message_id": message.message_id,
-                "embedding": embedding_list
+                "message_id": message.message_id
             }
+            
+            # Add embedding if vector search is enabled
+            if self.vector_search_enabled:
+                try:
+                    import numpy as np
+                    embedding = self.embedding_model.encode(message.content, convert_to_numpy=True)
+                    embedding_list = embedding.astype(np.float32).tolist()
+                    message_data["embedding"] = embedding_list
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to generate embedding: {e}")
             
             # Store in Redis hash
             key = f"message:{message.message_id}"
@@ -149,15 +162,21 @@ class RedisDatabase:
             return []
     
     async def semantic_search(self, user_id: int, query: str, limit: int = 5) -> List[Dict]:
-        """Search for semantically similar messages"""
+        """Search for semantically similar messages with fallback"""
         try:
-            if not self.embedding_model:
-                logger.warning("⚠️ Embedding model not available, falling back to keyword search")
+            # Check if vector search is enabled
+            if not self.vector_search_enabled:
+                logger.info("🔄 Using keyword search fallback (vector search disabled)")
                 return await self._keyword_search(user_id, query, limit)
             
             # Generate query embedding
-            query_embedding = self.embedding_model.encode(query, convert_to_numpy=True)
-            query_vector = query_embedding.astype(np.float32).tolist()
+            try:
+                import numpy as np
+                query_embedding = self.embedding_model.encode(query, convert_to_numpy=True)
+                query_vector = query_embedding.astype(np.float32).tolist()
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to generate query embedding: {e}")
+                return await self._keyword_search(user_id, query, limit)
             
             # Perform vector search
             search_query = f"*=>[KNN {limit} @embedding $query_vec]"
