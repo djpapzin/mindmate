@@ -136,7 +136,11 @@ def run_test():
         responses = {}
         for model in MODELS:
             print(f"  → Querying {model}...")
-            responses[model] = get_response(client, model, prompt)
+            response = get_response(client, model, prompt)
+            responses[model] = response
+            if response.startswith("[ERROR:"):
+                print(f"  ❌ {model} failed: {response}")
+                responses[model] = f"[MODEL ERROR: {response}]"
         
         # Shuffle models for blind assignment
         shuffled = MODELS.copy()

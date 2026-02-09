@@ -73,7 +73,9 @@ python-dotenv                   # Environment variables
 fastapi                         # Web framework
 uvicorn[standard]              # ASGI server
 aiofiles>=23.0.0,<24.0.0    # Async file operations for voice
-asyncpg                        # PostgreSQL driver
+redis==5.0.1                   # Redis storage and vector search
+sentence-transformers==2.2.2  # Text embeddings for semantic search
+numpy==1.24.3                 # Vector operations
 pydantic                        # Data validation
 ```
 
@@ -82,7 +84,7 @@ pydantic                        # Data validation
 ### 🌐 Render Configuration
 - **Platform**: Render.com (free tier)
 - **Architecture**: FastAPI + Uvicorn + Webhook mode
-- **Database**: PostgreSQL (free tier)
+- **Database**: Redis (free tier) with vector search
 - **Webhook**: `https://mindmate-dev.onrender.com/webhook`
 
 ### 🐳 Container Support
@@ -112,7 +114,10 @@ pydantic                        # Data validation
 - [x] **Personal Mode**: Therapeutic AI conversations
 - [x] **Crisis Detection**: Automatic resource provision
 - [x] **Command Menu**: Enhanced UX with emoji labels
-- [x] **Conversation History**: PostgreSQL + in-memory fallback
+- [x] **Redis Vector Storage**: Persistent memory with semantic search
+- [x] **Conversation History**: Cross-session continuity with Redis
+- [x] **Semantic Memory**: Vector-based context retrieval
+- [x] **Graceful Fallback**: In-memory storage when Redis unavailable
 
 ### 🚧 **Current Limitations**
 - [ ] **Voice Selection**: Currently only female voice (alloy)

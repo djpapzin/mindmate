@@ -19,6 +19,9 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import uvicorn
 
+# Import Redis database module
+from redis_db import DatabaseManager, Message
+
 # Unique instance ID to help debug multiple instances
 INSTANCE_ID = str(uuid.uuid4())[:8]
 
@@ -30,6 +33,8 @@ load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 PORT = int(os.getenv("PORT", 10000))
 MAX_HISTORY_LENGTH = 10
 
@@ -271,6 +276,10 @@ Remember: I'm here to support, not replace professional help. 💙"""
 # Global State
 # =============================================================================
 
+# Redis Database Manager (replaces in-memory storage)
+db_manager: DatabaseManager = None
+
+# Fallback in-memory storage for when Redis is unavailable
 conversation_history: dict[int, list[dict[str, str]]] = {}
 user_model_selection: dict[int, str] = {}  # Track model per user for A/B testing
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
@@ -333,9 +342,23 @@ telegram_app: Application = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events for FastAPI."""
-    global telegram_app
+    global telegram_app, db_manager
     
-    # Startup: Initialize and start the Telegram bot
+    # Startup: Initialize Redis database first
+    logger.info(f"[{INSTANCE_ID}] Initializing Redis database...")
+    
+    try:
+        db_manager = DatabaseManager(REDIS_URL, EMBEDDING_MODEL)
+        await db_manager.connect()
+        logger.info(f"[{INSTANCE_ID}] ✅ Redis database connected successfully!")
+    except Exception as e:
+        logger.error(f"[{INSTANCE_ID}] ❌ Failed to connect to Redis: {e}")
+        logger.info(f"[{INSTANCE_ID}] 🔄 Will use in-memory fallback storage")
+        # Create fallback database manager
+        db_manager = DatabaseManager(REDIS_URL, EMBEDDING_MODEL)
+        # Don't connect - will use fallback mode
+    
+    # Initialize and start the Telegram bot
     logger.info(f"[{INSTANCE_ID}] Starting MindMate Bot...")
     
     if not TELEGRAM_BOT_TOKEN:
@@ -397,7 +420,11 @@ async def lifespan(app: FastAPI):
     
     yield  # App is running
     
-    # Shutdown: Stop the bot
+    # Shutdown: Close database and stop the bot
+    if db_manager:
+        logger.info(f"[{INSTANCE_ID}] Closing database connection...")
+        await db_manager.close()
+    
     if telegram_app:
         logger.info(f"[{INSTANCE_ID}] Shutting down bot...")
         if telegram_app.updater.running:
@@ -466,6 +493,14 @@ async def webhook(request: Request):
 # =============================================================================
 
 def get_history(user_id: int) -> list[dict[str, str]]:
+    """Get conversation history for a user from Redis or fallback."""
+    if db_manager:
+        try:
+            return asyncio.run(db_manager.get_conversation_history(user_id, MAX_HISTORY_LENGTH))
+        except Exception as e:
+            logger.warning(f"Failed to get history from Redis: {e}")
+    
+    # Fallback to in-memory storage
     return conversation_history.get(user_id, [])
 
 def store_pending_context(user_id: int, file_info: str, description: str) -> None:
@@ -525,14 +560,40 @@ def get_user_journey_summary(user_id: int) -> str:
 
     return " | ".join(summary_parts) if summary_parts else "Building understanding of your situation..."
 
-def add_to_history(user_id: int, role: str, content: str) -> None:
+async def add_to_history(user_id: int, role: str, content: str) -> None:
+    """Add message to conversation history using Redis with fallback."""
+    if db_manager:
+        try:
+            # Create message object for Redis
+            message = Message(
+                user_id=user_id,
+                content=content,
+                role=role,
+                timestamp=datetime.now(),
+                message_id=f"{user_id}_{datetime.now().timestamp()}"
+            )
+            await db_manager.store_message(message)
+            return
+        except Exception as e:
+            logger.warning(f"Failed to store message in Redis: {e}")
+    
+    # Fallback to in-memory storage
     if user_id not in conversation_history:
         conversation_history[user_id] = []
     conversation_history[user_id].append({"role": role, "content": content})
     if len(conversation_history[user_id]) > MAX_HISTORY_LENGTH:
         conversation_history[user_id] = conversation_history[user_id][-MAX_HISTORY_LENGTH:]
 
-def clear_history(user_id: int) -> None:
+async def clear_history(user_id: int) -> None:
+    """Clear conversation history using Redis with fallback."""
+    if db_manager:
+        try:
+            await db_manager.clear_conversation(user_id)
+            return
+        except Exception as e:
+            logger.warning(f"Failed to clear history in Redis: {e}")
+    
+    # Fallback to in-memory storage
     conversation_history.pop(user_id, None)
 
 # =============================================================================
@@ -591,7 +652,7 @@ async def cmd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    clear_history(user_id)
+    await clear_history(user_id)
     logger.info(f"User {user_id} cleared history")
     await update.message.reply_text("Conversation history cleared. 🧹")
 
@@ -617,7 +678,7 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if model_key in AVAILABLE_MODELS:
         new_model = AVAILABLE_MODELS[model_key]
         set_user_model(user_id, new_model)
-        clear_history(user_id)  # Clear history when switching models
+        await clear_history(user_id)  # Clear history when switching models
         logger.info(f"User {user_id} switched to model: {new_model}")
         await update.message.reply_text(
             f"✅ Switched to **{new_model}**\n\n"
@@ -919,7 +980,7 @@ async def cmd_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         context_text = " ".join(context.args)
         
         # Add to conversation history as a system message for immediate context
-        add_to_history(user_id, "system", f"IMPORTANT USER CONTEXT: {context_text}")
+        await add_to_history(user_id, "system", f"IMPORTANT USER CONTEXT: {context_text}")
         
         await update.message.reply_text(
             f"✅ **Context saved!** I'll remember this for our conversations.\n\n"
@@ -1004,8 +1065,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         reply = response.choices[0].message.content
         
-        add_to_history(user_id, "user", message)
-        add_to_history(user_id, "assistant", reply)
+        await add_to_history(user_id, "user", message)
+        await add_to_history(user_id, "assistant", reply)
         
         await update.message.reply_text(reply)
         logger.info(f"Responded to user {user_id}")
@@ -1215,7 +1276,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             logger.info(f"Transcription successful: {transcribed_text[:100]}...")
             
             # Add transcription to history
-            add_to_history(user_id, "user", transcribed_text)
+            await add_to_history(user_id, "user", transcribed_text)
             
             # Get conversation history
             history = get_history(user_id)
@@ -1251,7 +1312,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 return
             
             # Add response to history
-            add_to_history(user_id, "assistant", response_text)
+            await add_to_history(user_id, "assistant", response_text)
             
             # Generate voice response
             logger.info(f"About to create TTS for user {user_id}")
@@ -1390,7 +1451,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             # For now, just acknowledge and add to context
             # In future, we could extract text from PDFs
             context_message = f"User shared document: {document.file_name} - this contains important treatment/medical information"
-            add_to_history(user_id, "system", context_message)
+            await add_to_history(user_id, "system", context_message)
             
             await update.message.reply_text(
                 f"📄 **Document received!** I've saved '{document.file_name}' for context.\n\n"

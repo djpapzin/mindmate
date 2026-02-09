@@ -10,3 +10,16 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      - key: REDIS_URL
+        sync: false
+        value: redis://red-c2qgq9b321ks73c6p7g0:6379
+      - key: EMBEDDING_MODEL
+        sync: false
+        value: all-MiniLM-L6-v2
+
+  - type: redis
+    name: mindmate-redis
+    plan: free
+    ipAllowList:
+      - sourceIp: 0.0.0.0/0
+        description: allow all

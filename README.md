@@ -20,11 +20,13 @@
 |---------|-------------|
 | 💬 **Empathetic Chat** | AI-powered conversations with emotional intelligence |
 | 🚨 **Crisis Detection** | Automatic detection with SA helpline resources (SADAG) |
-| 📝 **Context Memory** | Remembers last 10 messages per conversation |
+| 📝 **Persistent Memory** | Redis-powered cross-session conversation history |
+| 🔍 **Semantic Search** | Vector-based memory retrieval for better context |
 | 🔓 **Personal Mode** | Premium experience with direct advice (no disclaimers) |
 | 🎛️ **Voice Messages** | Send voice notes → bot responds with voice (Smart Caption Handling) ✅ **COMPLETED** |
 | 🧪 **A/B Testing** | Built-in model comparison tools |
 | ⚡ **FastAPI Backend** | Modern async architecture with webhooks |
+| 🛡️ **Graceful Fallback** | In-memory storage if Redis unavailable |
 
 ### Commands
 | Command | Description |
