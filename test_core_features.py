@@ -271,7 +271,7 @@ and update based on future conversations."""
     
     forget_checks = [
         "🗑️" in forget_help,
-        "/forget" in remember_help,
+        "/forget" in forget_help,
         "medication" in forget_help,
         "therapy" in forget_help
     ]
