@@ -650,10 +650,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "What's on your mind today? 💙"
         )
     else:
-        await update.message.reply_text(WELCOME_MESSAGE)
+        await send_markdown_message(update, WELCOME_MESSAGE)
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(HELP_MESSAGE)
+    await send_markdown_message(update, HELP_MESSAGE)
 
 async def cmd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show current mode and model assignment."""
@@ -666,7 +666,7 @@ async def cmd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         name = user_info.get("name", "Personal User")
         assigned_model = user_info.get("model", "Auto-assigned")
         
-        await update.message.reply_text(
+        await send_markdown_message(update,
             f"👤 **Personal Mode Active**\n\n"
             f"**User:** {name}\n"
             f"**Model:** `{current_model}`\n"
@@ -674,7 +674,7 @@ async def cmd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"🎯 You have access to personalized context and premium model support."
         )
     else:
-        await update.message.reply_text(
+        await send_markdown_message(update,
             "🔒 **Standard Mode: ACTIVE**\n\n"
             "You're using the standard MindMate experience.\n\n"
             f"User ID: `{user_id}`",
@@ -684,7 +684,7 @@ async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     await clear_history(user_id)
     logger.info(f"User {user_id} cleared history")
-    await update.message.reply_text("Conversation history cleared. 🧹")
+    await send_markdown_message(update, "Conversation history cleared. 🧹")
 
 async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /model command for A/B testing."""
@@ -695,7 +695,7 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not args:
         current = get_user_model(user_id)
         models_list = "\n".join([f"• `{k}` → {v}" for k, v in AVAILABLE_MODELS.items()])
-        await update.message.reply_text(
+        await send_markdown_message(update,
             f"🧪 **A/B Testing Mode**\n\n"
             f"**Current model:** `{current}`\n\n"
             f"**Available models:**\n{models_list}\n\n"
@@ -710,13 +710,13 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         set_user_model(user_id, new_model)
         await clear_history(user_id)  # Clear history when switching models
         logger.info(f"User {user_id} switched to model: {new_model}")
-        await update.message.reply_text(
+        await send_markdown_message(update,
             f"✅ Switched to **{new_model}**\n\n"
             f"History cleared for fresh comparison.\n"
             f"Start chatting to test this model!",
         )
     else:
-        await update.message.reply_text(
+        await send_markdown_message(update,
             f"❌ Unknown model: `{model_key}`\n\n"
             f"Available: {', '.join(AVAILABLE_MODELS.keys())}",
         )
@@ -727,7 +727,7 @@ async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user_id = update.effective_user.id
     
     if not is_personal_mode(user_id):
-        await update.message.reply_text("This feature is only available in Personal Mode.")
+        await send_markdown_message(update, "This feature is only available in Personal Mode.")
         return
     
     if context.args:
@@ -740,7 +740,7 @@ async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         # Also update journey tracking with structured context
         update_context_from_message(user_id, context_text)
         
-        await update.message.reply_text(
+        await send_markdown_message(update,
             f"🧠 **Got it!** I'll remember this for our conversations.\n\n"
             f"💡 This helps me provide better, more personalized support."
         )
@@ -749,7 +749,7 @@ async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         # Show current context and explain auto-learning
         current_context = get_user_journey_summary(user_id)
         
-        await update.message.reply_text(
+        await send_markdown_message(update,
             f"🧠 **Share important information to remember:**\n\n"
             f"• `/remember I have bipolar type 2` - Medical info\n"
             f"• `/remember I take Lithium 300mg daily` - Medication details\n"
@@ -769,7 +769,7 @@ async def cmd_forget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     user_id = update.effective_user.id
     
     if not is_personal_mode(user_id):
-        await update.message.reply_text("This feature is only available in Personal Mode.")
+        await send_markdown_message(update, "This feature is only available in Personal Mode.")
         return
     
     if context.args:
@@ -835,7 +835,7 @@ async def cmd_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_id = update.effective_user.id
     
     if not is_personal_mode(user_id):
-        await update.message.reply_text("This feature is only available in Personal Mode.")
+        await send_markdown_message(update, "This feature is only available in Personal Mode.")
         return
     
     # Check if there's a pending file to confirm
@@ -874,7 +874,7 @@ async def cmd_decline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_id = update.effective_user.id
     
     if not is_personal_mode(user_id):
-        await update.message.reply_text("This feature is only available in Personal Mode.")
+        await send_markdown_message(update, "This feature is only available in Personal Mode.")
         return
     
     # Check if there's a pending file to decline
@@ -906,7 +906,7 @@ async def cmd_journey(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_id = update.effective_user.id
     
     if not is_personal_mode(user_id):
-        await update.message.reply_text("This feature is only available in Personal Mode.")
+        await send_markdown_message(update, "This feature is only available in Personal Mode.")
         return
     
     # Get journey summary
@@ -941,7 +941,7 @@ async def cmd_journal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_id = update.effective_user.id
     
     if not is_personal_mode(user_id):
-        await update.message.reply_text("This feature is only available in Personal Mode.")
+        await send_markdown_message(update, "This feature is only available in Personal Mode.")
         return
     
     # Check if user has journal entries
@@ -976,7 +976,7 @@ async def cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user_id = update.effective_user.id
     
     if not is_personal_mode(user_id):
-        await update.message.reply_text("This feature is only available in Personal Mode.")
+        await send_markdown_message(update, "This feature is only available in Personal Mode.")
         return
     
     # For now, just show the current schedule info
@@ -1002,7 +1002,7 @@ async def cmd_context(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_id = update.effective_user.id
     
     if not is_personal_mode(user_id):
-        await update.message.reply_text("This feature is only available in Personal Mode.")
+        await send_markdown_message(update, "This feature is only available in Personal Mode.")
         return
     
     if context.args:
@@ -1065,7 +1065,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 "Now, tell me more about what's going on...",
             )
         else:
-            await update.message.reply_text(CRISIS_RESPONSE)
+            await send_markdown_message(update, CRISIS_RESPONSE)
             return
     
     if not openai_client:
