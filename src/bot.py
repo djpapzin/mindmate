@@ -400,17 +400,9 @@ async def lifespan(app: FastAPI):
         commands = [
             BotCommand("start", "🚀 Start conversation"),
             BotCommand("help", "❓ Get help"),
-            BotCommand("mode", "🔓 Check mode"),
+            BotCommand("mode", "🔓 Switch to Personal Mode"),
             BotCommand("clear", "🧹 Clear history"),
-            BotCommand("model", "🧪 Test models"),
-            BotCommand("context", "🧠 View/update context"),
-            BotCommand("remember", "💾 Save important info"),
-            BotCommand("forget", "🗑️ Clear saved info"),
-            BotCommand("confirm", "✅ Confirm action"),
-            BotCommand("decline", "❌ Decline action"),
-            BotCommand("journey", "🗺️ View wellness journey"),
-            BotCommand("journal", "📔 Daily journal"),
-            BotCommand("schedule", "⏰ Set journal reminders"),
+            BotCommand("model", "🧪 Switch AI model"),
         ]
         
         async def set_commands():
