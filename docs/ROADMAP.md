@@ -798,7 +798,83 @@ Allow organizations (NGOs, companies, schools) to deploy their own branded versi
 
 ---
 
-## 💡 Feature Ideas (Backlog)
+## �️ AI Tools Framework
+
+### 📋 Tools Documentation System
+**Timeline:** 1-2 weeks  
+**Priority:** P1 (High)  
+**Need:** "LLM needs structured documentation of available tools for proper tool usage"
+
+#### 🕐 Time Tool
+**Purpose**: Provide current time and date information to users
+**Implementation**: Extract from Telegram message timestamp
+**Format**: "7:57 AM on February 10, 2026"
+**Use Cases**: 
+- "what time is it?" → Current time
+- "what day is it?" → Current date  
+- "is it morning/evening?" → Time context
+- "is it too late to call?" → Time-based advice
+
+#### 🧠 Memory Tool
+**Purpose**: Search and retrieve conversation memories
+**Implementation**: Redis semantic search with archive fallback
+**Format**: Contextual memory snippets with timestamps
+**Use Cases**:
+- "what did I tell you about my anxiety?" → Relevant memories
+- "remember when I said..." → Context retrieval
+- Long-term continuity of care
+
+#### 📊 Journey Tool  
+**Purpose**: Access user's therapeutic journey data
+**Implementation**: User journey tracking system
+**Format**: Structured progress summary
+**Use Cases**:
+- Progress tracking
+- Pattern recognition
+- Treatment continuity
+
+#### 🔧 Technical Implementation
+```python
+# Tools documentation structure
+TOOLS_DOC = """
+# MindMate Bot Tools
+
+## 🕐 Time Tool
+**Function**: get_current_time()
+**Returns**: Current timestamp in user's timezone
+**Usage**: Time queries, temporal context, scheduling
+
+## 🧠 Memory Tool
+**Function**: search_memories(query)  
+**Returns**: Relevant conversation memories
+**Usage**: Personal context, continuity, pattern recognition
+
+## 📊 Journey Tool
+**Function**: get_user_journey(user_id)
+**Returns**: User's therapeutic journey summary
+**Usage**: Progress tracking, long-term support
+"""
+
+# System prompt integration
+system_prompt = f"{SYSTEM_PROMPT}\n\n{TOOLS_DOC}\n\nCurrent time: {current_time}"
+```
+
+#### 🎯 Benefits
+- ✅ LLM knows exactly what tools it has
+- ✅ Proper tool usage and invocation
+- ✅ Consistent tool responses
+- ✅ Extensible framework for future tools
+- ✅ Professional AI system architecture
+
+#### 📈 Future Tool Extensions
+- 🌤️ Weather Tool (mood correlation)
+- 📅 Calendar Tool (appointment reminders)
+- 💊 Medication Tool (timing reminders)
+- 📈 Analytics Tool (progress insights)
+
+---
+
+## �💡 Feature Ideas (Backlog)
 
 ### 🚀 High Priority (User-Requested)
 
