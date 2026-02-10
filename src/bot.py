@@ -1076,6 +1076,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     system_prompt = get_personal_mode_prompt(user_id) if personal_mode else SYSTEM_PROMPT
     current_model = get_user_model(user_id)
     
+    # Add time context for temporal awareness
+    current_time = update.message.date.strftime("%I:%M %p on %B %d, %Y")
+    system_prompt = f"{system_prompt}\n\nCurrent time: {current_time}"
+    
     mode_str = "PERSONAL" if personal_mode else "STANDARD"
     logger.info(f"Message from user {user_id} [{mode_str}] using model {current_model}")
     
