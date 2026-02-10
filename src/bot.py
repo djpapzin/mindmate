@@ -425,7 +425,6 @@ async def lifespan(app: FastAPI):
         telegram_app.add_handler(CommandHandler("journey", cmd_journey))
         telegram_app.add_handler(CommandHandler("journal", cmd_journal))
         telegram_app.add_handler(CommandHandler("schedule", cmd_schedule))
-        telegram_app.add_handler(CommandHandler("archive", cmd_archive))
         telegram_app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
         telegram_app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image_document))
         telegram_app.add_handler(MessageHandler(filters.Document.PDF | filters.Document.TEXT, handle_document))
