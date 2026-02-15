@@ -62,6 +62,7 @@ load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 PORT = int(os.getenv("PORT", 10000))
@@ -377,14 +378,14 @@ async def lifespan(app: FastAPI):
     logger.info(f"[{INSTANCE_ID}] Initializing Redis database...")
     
     try:
-        db_manager = DatabaseManager(REDIS_URL, EMBEDDING_MODEL)
+        db_manager = DatabaseManager(REDIS_URL, openai_client)
         await db_manager.connect()
         logger.info(f"[{INSTANCE_ID}] ✅ Redis database connected successfully!")
     except Exception as e:
         logger.error(f"[{INSTANCE_ID}] ❌ Failed to connect to Redis: {e}")
         logger.info(f"[{INSTANCE_ID}] 🔄 Will use in-memory fallback storage")
         # Create fallback database manager
-        db_manager = DatabaseManager(REDIS_URL, EMBEDDING_MODEL)
+        db_manager = DatabaseManager(REDIS_URL, openai_client)
         # Don't connect - will use fallback mode
     
     # Initialize and start the Telegram bot

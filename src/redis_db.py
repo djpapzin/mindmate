@@ -26,11 +26,12 @@ class Message:
 class RedisDatabase:
     """Redis database manager with basic storage capabilities"""
     
-    def __init__(self, redis_url: str, embedding_model: str = "all-MiniLM-L6-v2"):
+    def __init__(self, redis_url: str, openai_client=None):
         self.redis_url = redis_url
-        self.embedding_model_name = embedding_model
+        self.openai_client = openai_client
         self.redis_client = None
         self.vector_search_enabled = False
+        self.vector_dimension = 1536  # OpenAI text-embedding-3-small uses 1536 dims
         
     async def connect(self):
         """Initialize Redis connection"""
@@ -40,19 +41,20 @@ class RedisDatabase:
             await self.redis_client.ping()
             logger.info("✅ Redis connected successfully")
             
-            # Try to initialize embedding model (optional)
+            # Try to initialize OpenAI embeddings (optional)
             try:
-                from sentence_transformers import SentenceTransformer
-                import numpy as np
-                self.embedding_model = SentenceTransformer(self.embedding_model_name)
-                self.vector_dimension = 384
-                self.vector_search_enabled = True
-                logger.info(f"✅ Vector search enabled: {self.embedding_model_name}")
-                
-                # Create vector index for semantic search
-                await self._create_vector_index()
+                import openai
+                if self.openai_client:
+                    self.vector_search_enabled = True
+                    logger.info("✅ Vector search enabled: OpenAI text-embedding-3-small")
+                    
+                    # Create vector index for semantic search
+                    await self._create_vector_index()
+                else:
+                    logger.warning("⚠️ Vector search disabled (OpenAI client not available)")
+                    logger.info("🔄 Using keyword search fallback")
             except ImportError:
-                logger.warning("⚠️ Vector search disabled (sentence-transformers not available)")
+                logger.warning("⚠️ Vector search disabled (openai not available)")
                 logger.info("🔄 Using keyword search fallback")
             
         except Exception as e:
@@ -108,12 +110,16 @@ class RedisDatabase:
             # Add embedding if vector search is enabled
             if self.vector_search_enabled:
                 try:
-                    import numpy as np
-                    embedding = self.embedding_model.encode(message.content, convert_to_numpy=True)
-                    embedding_list = embedding.astype(np.float32).tolist()
+                    # Generate embedding using OpenAI
+                    response = await self.openai_client.embeddings.create(
+                        model="text-embedding-3-small",
+                        input=message.content
+                    )
+                    embedding_list = response.data[0].embedding
                     message_data["embedding"] = embedding_list
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to generate embedding: {e}")
+                    # Continue without embedding
             
             # Store in Redis hash
             key = f"message:{message.message_id}"
@@ -229,10 +235,16 @@ class RedisDatabase:
     async def _search_recent_vector(self, user_id: int, query: str, limit: int) -> List[Dict]:
         """Search recent conversation using vector search"""
         try:
-            # Generate query embedding
-            import numpy as np
-            query_embedding = self.embedding_model.encode(query, convert_to_numpy=True)
-            query_vector = query_embedding.astype(np.float32).tolist()
+            # Generate query embedding using OpenAI
+            try:
+                response = await self.openai_client.embeddings.create(
+                    model="text-embedding-3-small",
+                    input=query
+                )
+                query_vector = response.data[0].embedding
+            except Exception as e:
+                logger.error(f"❌ Failed to generate query embedding: {e}")
+                return await self._keyword_search_with_archive(user_id, query, limit)
             
             # Perform vector search
             search_query = f"*=>[KNN {limit} @embedding $query_vec]"
@@ -485,8 +497,8 @@ class InMemoryFallback:
 class DatabaseManager:
     """Main database manager with Redis + fallback"""
     
-    def __init__(self, redis_url: str, embedding_model: str = "all-MiniLM-L6-v2"):
-        self.redis_db = RedisDatabase(redis_url, embedding_model)
+    def __init__(self, redis_url: str, openai_client=None):
+        self.redis_db = RedisDatabase(redis_url, openai_client)
         self.fallback = InMemoryFallback()
         self.use_redis = True
     
