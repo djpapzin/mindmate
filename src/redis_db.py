@@ -67,6 +67,10 @@ class RedisDatabase:
             return
             
         try:
+            # Import Redis Search fields
+            from redis.commands.search.field import TextField, VectorField
+            from redis.commands.search.indexDefinition import IndexDefinition, IndexType
+            
             # Drop existing index if it exists
             try:
                 await self.redis_client.ft("msg_idx").dropindex()
@@ -77,8 +81,8 @@ class RedisDatabase:
             # Create new vector index
             await self.redis_client.ft("msg_idx").create_index(
                 fields=[
-                    redis.fields.TextField("$.content", as_name="content"),
-                    redis.fields.VectorField("$.embedding", 
+                    TextField("$.content", as_name="content"),
+                    VectorField("$.embedding", 
                         "FLAT", 
                         {
                             "TYPE": "FLOAT32",
@@ -86,7 +90,8 @@ class RedisDatabase:
                             "DISTANCE_METRIC": "COSINE"
                         }, 
                         as_name="embedding")
-                ]
+                ],
+                definition=IndexDefinition(prefix=["message:"], index_type=IndexType.JSON)
             )
             logger.info("✅ Vector index created successfully")
             
