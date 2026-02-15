@@ -33,6 +33,14 @@ class RedisDatabase:
         self.vector_search_enabled = False
         self.vector_dimension = 1536  # OpenAI text-embedding-3-small uses 1536 dims
         
+        # Environment-based namespace separation
+        self.env = os.getenv("ENV", "production")
+        self.prefix = f"{self.env}:" if self.env != "production" else ""
+    
+    def _key(self, key: str) -> str:
+        """Add environment prefix to Redis key"""
+        return f"{self.prefix}{key}"
+        
     async def connect(self):
         """Initialize Redis connection"""
         try:
@@ -91,7 +99,7 @@ class RedisDatabase:
                         }, 
                         as_name="embedding")
                 ],
-                definition=IndexDefinition(prefix=["message:"], index_type=IndexType.JSON)
+                definition=IndexDefinition(prefix=[self._key("message:")], index_type=IndexType.JSON)
             )
             logger.info("✅ Vector index created successfully")
             
@@ -127,11 +135,11 @@ class RedisDatabase:
                     # Continue without embedding
             
             # Store in Redis hash
-            key = f"message:{message.message_id}"
+            key = self._key(f"message:{message.message_id}")
             await self.redis_client.hset(key, mapping=message_data)
             
             # Add to user's conversation list
-            conversation_key = f"conversation:{message.user_id}"
+            conversation_key = self._key(f"conversation:{message.user_id}")
             await self.redis_client.lpush(conversation_key, json.dumps({
                 "message_id": message.message_id,
                 "role": message.role,
@@ -159,7 +167,7 @@ class RedisDatabase:
             messages = await self.redis_client.lrange(conversation_key, 50, -1)  # Get messages beyond position 50
             
             if messages:
-                archive_key = f"archive:{user_id}"
+                archive_key = self._key(f"archive:{user_id}")
                 for msg_json in messages:
                     # Add to archive with extended TTL (90 days)
                     await self.redis_client.lpush(archive_key, msg_json)
@@ -178,7 +186,7 @@ class RedisDatabase:
     async def get_archived_messages(self, user_id: int, limit: int = 20) -> List[Dict]:
         """Retrieve archived messages for a user."""
         try:
-            archive_key = f"archive:{user_id}"
+            archive_key = self._key(f"archive:{user_id}")
             messages = await self.redis_client.lrange(archive_key, 0, limit - 1)
             
             archived = []
@@ -198,7 +206,7 @@ class RedisDatabase:
     async def get_conversation_history(self, user_id: int, limit: int = 10) -> List[Dict]:
         """Get conversation history for a user"""
         try:
-            conversation_key = f"conversation:{user_id}"
+            conversation_key = self._key(f"conversation:{user_id}")
             messages = await self.redis_client.lrange(conversation_key, 0, limit - 1)
             
             history = []
@@ -286,7 +294,7 @@ class RedisDatabase:
     async def _search_archive_keyword(self, user_id: int, query: str, limit: int) -> List[Dict]:
         """Search archived messages using keyword matching"""
         try:
-            archive_key = f"archive:{user_id}"
+            archive_key = self._key(f"archive:{user_id}")
             archived_messages = await self.redis_client.lrange(archive_key, 0, -1)
             
             archive_results = []
@@ -393,7 +401,7 @@ class RedisDatabase:
     async def clear_conversation(self, user_id: int):
         """Clear conversation history for a user"""
         try:
-            conversation_key = f"conversation:{user_id}"
+            conversation_key = self._key(f"conversation:{user_id}")
             await self.redis_client.delete(conversation_key)
             logger.info(f"✅ Cleared conversation for user {user_id}")
             
@@ -406,9 +414,9 @@ class RedisDatabase:
             info = await self.redis_client.info()
             
             # Count conversations
-            conversation_keys = await self.redis_client.keys("conversation:*")
-            message_keys = await self.redis_client.keys("message:*")
-            user_keys = await self.redis_client.keys("user:*")
+            conversation_keys = await self.redis_client.keys(self._key("conversation:*"))
+            message_keys = await self.redis_client.keys(self._key("message:*"))
+            user_keys = await self.redis_client.keys(self._key("user:*"))
             
             return {
                 "redis_memory_used": info.get("used_memory_human", "Unknown"),
