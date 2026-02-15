@@ -48,3 +48,6 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Conversation exports (contains user data)
+conversation_c*/

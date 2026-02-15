@@ -49,19 +49,35 @@ Visual diagrams to understand how MindMate works.
 │  ┌─────────────────────────┼─────────────────────────────────┐  │
 │  │                         ▼                                 │  │
 │  │  ┌─────────────────────────────────────────────────────┐  │  │
-│  │  │              In-Memory Storage (Current)            │  │  │
+│  │  │              Redis Storage (Current) ✅              │  │  │
+│  │  │                                                     │  │  │
+│  │  │   • conversation_history: Redis Lists                │  │  │
+│  │  │   • user_preferences: Redis Hash                     │  │  │
+│  │  │   • message_embeddings: Redis Vector Search          │  │  │
+│  │  │   • semantic_search: RediSearch Index               │  │  │
+│  │  │   • auto-expiration: TTL-based cleanup              │  │  │
+│  │  │   • fallback: In-memory storage                     │  │  │
+│  │  └─────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │  ┌─────────────────────────────────────────────────────┐  │  │
+│  │  │              In-Memory Storage (Legacy)             │  │  │
 │  │  │                                                     │  │  │
 │  │  │   • conversation_history: dict[user_id -> messages] │  │  │
 │  │  │   • user_model_selection: dict[user_id -> model]    │  │  │
 │  │  │   • processed_messages: set (deduplication)         │  │  │
+│  │  │   • Fallback when Redis unavailable                 │  │  │
 │  │  └─────────────────────────────────────────────────────┘  │  │
 │  │                                                           │  │
 │  │  ┌─────────────────────────────────────────────────────┐  │  │
-│  │  │              PostgreSQL (Future)                    │  │  │
+│  │  │              PostgreSQL (Deprecated)                │  │  │
 │  │  │                                                     │  │  │
 │  │  │   • users table (profiles)                          │  │  │
 │  │  │   • sessions table (summaries)                      │  │  │
 │  │  │   • messages table (history)                        │  │  │
+│  │  │   • Replaced by Redis for performance               │  │  │
+│  │  │   • Service still running for health checks         │  │  │
+│  │  │   • NOT used by current implementation              │  │  │
+│  │  │   • Can be safely deleted or kept for future use    │  │  │
 │  │  └─────────────────────────────────────────────────────┘  │  │
 │  │                                                           │  │
 │  └───────────────────────────────────────────────────────────┘  │
@@ -384,18 +400,24 @@ mindmate/
 │                         TECH STACK                              │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  BACKEND                        EXTERNAL SERVICES               │
-│  ────────                       ─────────────────               │
-│  • Python 3.13                  • OpenAI GPT-4o-mini            │
-│  • FastAPI                      • Telegram Bot API              │
-│  • Uvicorn (ASGI)               • Render (hosting)              │
-│  • python-telegram-bot          • UptimeRobot (monitoring)      │
+│  BACKEND                        STORAGE                         │
+│  ────────                       ────────                         │
+│  • Python 3.13                  • Redis (vector + memory)        │
+│  • FastAPI                      • Sentence Transformers         │
+│  • Uvicorn (ASGI)               • Auto-expiration (TTL)          │
+│  • python-telegram-bot                                          │
 │                                                                 │
-│  FUTURE                         DEVELOPMENT                     │
-│  ──────                         ───────────                     │
-│  • PostgreSQL                   • GitHub (repo)                 │
-│  • pgvector (semantic)          • Feature branches              │
-│  • Twilio (WhatsApp)            • Auto-deploy                   │
+│  EXTERNAL SERVICES              DEPRECATED                      │
+│  ─────────────────               ──────────                     │
+│  • OpenAI GPT-4o-mini            • PostgreSQL (unused)           │
+│  • Telegram Bot API              • pgvector (not needed)         │
+│  • Render (hosting)              • In-memory dicts               │
+│  • UptimeRobot (monitoring)                                      │
+│                                                                 │
+│  DEVELOPMENT                                                     │
+│  ───────────                                                     │
+│  • GitHub (repo)                 • Feature branches              │
+│  • Auto-deploy                   • Twilio (WhatsApp - future)    │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```

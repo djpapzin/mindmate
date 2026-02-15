@@ -15,48 +15,68 @@ load_dotenv()
 # Models to test
 MODELS = ["gpt-4o-mini", "gpt-4.1-mini", "gpt-5.2"]
 
-# System prompt (same as bot)
-SYSTEM_PROMPT = """You are MindMate, an AI mental wellness companion. You provide:
-- Emotional reflection and support
-- Journaling prompts
-- Basic psychoeducation about stress and habits
-- Help planning small, manageable next steps
+# Personalized system prompt for DJ Fanampe - AI/ML Engineer in South Africa
+SYSTEM_PROMPT = """You are MindMate, an AI mental wellness companion providing support to DJ Fanampe, a talented AI/ML Engineer in South Africa.
 
-You are NOT a therapist, doctor, or emergency service. Never diagnose or provide medical advice.
-Be concise, warm, and non-judgmental. Use emojis sparingly."""
+Context about DJ:
+- Name: Letlhogonolo Fanampe (goes by DJ/Papzin)
+- Career: AI/ML Engineer working with cutting-edge technologies (LangChain, OpenAI, etc.)
+- Location: South Africa (remote work, dealing with timezone challenges)
+- Focus areas: Tech career growth, bipolar management, relationships, financial pressure
+- Achievements: Multiple hackathon wins, diverse AI projects, freelance success
+- Challenges: Imposter syndrome, work-life balance, representing African excellence in AI
 
-# Test prompts covering different mental wellness scenarios
+You provide:
+- Emotional reflection tailored to tech industry challenges
+- Support for bipolar management while maintaining technical productivity
+- Guidance on remote work isolation and timezone collaboration
+- Help with financial pressure comparison in tech industry
+- Support for relationship challenges when partner doesn't understand tech work
+- Encouragement for representing African excellence in global AI
+
+You understand the unique pressures of:
+- Constant learning in rapidly evolving AI field
+- Building solutions for African markets with limited resources
+- Balancing hypomanic productivity with depressive crashes
+- Converting hackathon wins into sustainable career opportunities
+- Managing freelance income uncertainty while pursuing passion projects
+
+Be direct, warm, and reference his specific context. Use relevant tech and Africa examples where helpful. Be concise but thorough."""
+
+# Personalized test prompts for DJ Fanampe - AI/ML Engineer in South Africa
 TEST_PROMPTS = [
-    # Anxiety
-    "I'm feeling really anxious about a job interview tomorrow. My mind keeps racing with worst-case scenarios.",
-    "I've been having trouble sleeping because I can't stop worrying about things I can't control.",
+    # Tech Career Challenges
+    "I'm working as an AI/ML Engineer remotely from South Africa, dealing with timezone differences and feeling isolated from global teams. How can I better connect and collaborate?",
+    "I'm constantly learning new AI frameworks (LangChain, OpenAI, etc.) but feel overwhelmed keeping up with the rapid pace. How do I stay current without burning out?",
+    "I'm building AI solutions for African markets but feel pressure to prove myself more than developers in other regions. How do I handle this imposter syndrome?",
     
-    # Work stress
-    "I'm completely overwhelmed with my workload. I don't know how to prioritize and everything feels urgent.",
-    "My boss criticized my work in front of the team and I feel humiliated. I'm questioning if I'm good enough.",
+    # Freelance/Contract Work Stress
+    "I'm juggling multiple AI contracts (Outlier, Kwantu) while building my own projects. The financial uncertainty is stressing me out. How do I manage this instability?",
+    "I won several hackathons but struggle to turn these wins into consistent income. How do I leverage my achievements for better career opportunities?",
     
-    # Relationships
-    "I had a big argument with my partner about finances. We both said hurtful things and now there's tension.",
-    "I feel like my friends don't really understand me. I often feel lonely even when I'm around people.",
+    # Remote Work & Work-Life Balance
+    "I'm deep in AI/ML work but worry I'm neglecting my bipolar management. How do I prioritize mental health while pushing technical boundaries?",
+    "I spend hours coding AI models and forget to eat or sleep properly. How do I build better routines as a remote AI engineer?",
     
-    # Self-esteem
-    "I keep comparing myself to others on social media and it makes me feel like I'm falling behind in life.",
-    "I made a mistake at work and I can't stop beating myself up about it. I feel like such a failure.",
+    # Relationship Challenges with Tech Context
+    "My partner doesn't understand what I do as an AI/ML Engineer. I feel disconnected when I try to explain my work. How do I bridge this gap?",
+    "I'm so focused on AI development that I'm neglecting my relationship. How do I balance my passion with my personal life?",
     
-    # Mood/Depression
-    "I've been feeling really low lately. Nothing seems to excite me anymore and I'm just going through the motions.",
-    "Some days I feel fine, but then suddenly I get hit with waves of sadness for no apparent reason.",
+    # Financial Pressure Specific to Tech Industry
+    "I see other AI developers making huge money and feel behind financially. How do I deal with comparison and financial anxiety in tech?",
+    "I'm investing so much in AI skills and courses but the ROI feels slow. How do I stay motivated when financial rewards take time?",
     
-    # Life transitions
-    "I'm going through a major life change and I feel lost. I don't know who I am anymore.",
-    "I'm struggling to find meaning and purpose. What's the point of it all?",
+    # South African Context
+    "Working in AI from South Africa has unique challenges - load shedding affecting training runs, limited local AI community. How do I thrive despite these constraints?",
+    "I feel pressure to represent African excellence in AI globally. The weight feels heavy sometimes. How do I handle this responsibility?",
     
-    # Practical support
-    "I want to start exercising but I can never stick to a routine. How do I build better habits?",
-    "I need to have a difficult conversation with someone but I keep avoiding it. How should I approach this?",
+    # Bipolar Management in Tech Context
+    "During hypomanic episodes I get obsessed with coding and build amazing things, then crash. How do I harness this energy sustainably?",
+    "When depressive episodes hit, I can't even look at my code. How do I maintain technical momentum during low periods?",
     
-    # General emotional support
-    "I just need someone to talk to. It's been a rough week and I feel like no one understands.",
+    # Personal Growth & Future
+    "I've built so many AI projects but struggle with the business side. How do I transition from pure tech to tech entrepreneurship?",
+    "I'm passionate about AI for Africa but get discouraged by lack of local resources. How do I stay motivated to build solutions for my context?",
 ]
 
 def get_response(client: OpenAI, model: str, prompt: str) -> str:
@@ -116,7 +136,11 @@ def run_test():
         responses = {}
         for model in MODELS:
             print(f"  → Querying {model}...")
-            responses[model] = get_response(client, model, prompt)
+            response = get_response(client, model, prompt)
+            responses[model] = response
+            if response.startswith("[ERROR:"):
+                print(f"  ❌ {model} failed: {response}")
+                responses[model] = f"[MODEL ERROR: {response}]"
         
         # Shuffle models for blind assignment
         shuffled = MODELS.copy()

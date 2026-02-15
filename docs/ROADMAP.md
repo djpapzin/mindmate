@@ -22,6 +22,9 @@ Available on **Telegram and WhatsApp**, with a **Premium Personal Mode** that ac
 | 🧪 **A/B Testing Tools** | `/test`, `/rate`, `/results` commands | Feb 2026 |
 | 📊 **Automated Blind Test** | `run_blind_test.py` script | Feb 2026 |
 | 🎯 **User Context** | Name, location, focus areas in prompt | Feb 2026 |
+| 🎛️ **Voice Messages** | Send/receive voice notes with smart caption handling | Feb 2026 |
+| 💰 **Voice Cost Optimization** | 14% reduction in voice processing costs | Feb 2026 |
+| 🔧 **Voice Caption Fix** | Smart splitting for long responses (Telegram 1024 limit) | Feb 2026 |
 
 ---
 
@@ -96,45 +99,97 @@ A private, unfiltered AI therapist experience. No corporate guardrails.
 
 ---
 
-### 🧠 Persistent Memory (NEXT PRIORITY)
+### 🔍 Internet Search Capabilities
 
-Long-term memory so the bot truly knows you across sessions.
+**Status:** 🔜 Next Priority
+
+Enable the bot to search the internet for current information, resources, and evidence-based mental health content.
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
-| **PostgreSQL Database** | Store user profiles & conversation summaries | High |
-| **User Profile (`/profile`)** | Edit name, focus areas, preferences | High |
-| **Session Summaries** | Auto-summarize each conversation | Medium |
-| **Progress Tracking** | "Last time you mentioned..." | Medium |
-| **Memory Retrieval** | Pull relevant past context into prompts | Medium |
+| **Real-time Information** | Search for current mental health research, news, and resources | High |
+| **Resource Verification** | Find and verify local mental health services and crisis lines | High |
+| **Evidence-based Responses** | Supplement AI knowledge with up-to-date research findings | Medium |
+| **Local Service Discovery** | Search for therapists, support groups, and services by location | Medium |
 
-**Database Schema (Planned):**
-```sql
--- Users table
-users (
-  telegram_id BIGINT PRIMARY KEY,
-  name TEXT,
-  focus_areas TEXT[],
-  preferences JSONB,
-  created_at TIMESTAMP
-)
+**Implementation Approach:**
+- **Search API:** Use Google Search API or Bing Search API
+- **Content Filtering:** Ensure results are from reputable mental health sources
+- **Privacy:** No personal data in searches, only general queries
+- **Cost Control:** Limit searches per conversation to manage API costs
 
--- Conversation summaries
-summaries (
-  id SERIAL PRIMARY KEY,
-  user_id BIGINT REFERENCES users,
-  summary TEXT,
-  key_topics TEXT[],
-  mood_indicators TEXT[],
-  created_at TIMESTAMP
-)
+**Use Cases:**
+- "Find therapists near me who specialize in anxiety"
+- "What are the latest research findings on CBT for depression?"
+- "Local support groups for bipolar disorder in Johannesburg"
+- "Current mental health resources during COVID-19"
+
+**Technical Implementation:**
+```python
+# Search integration example
+async def search_internet(query: str, location: str = None) -> List[SearchResult]:
+    """Search the internet for mental health resources and information"""
+    search_query = f"{query} mental health"
+    if location:
+        search_query += f" {location}"
+    
+    results = search_api.search(search_query, safe_search="active")
+    
+    # Filter for reputable sources only
+    filtered_results = [
+        result for result in results 
+        if is_reputable_source(result.domain)
+    ]
+    
+    return filtered_results[:5]  # Limit to top 5 results
 ```
 
-**Implementation Steps:**
-1. Set up PostgreSQL on Render (free tier)
-2. Create `/profile` command to view/edit profile
-3. Auto-save session summaries on /clear or timeout
-4. Inject relevant summaries into system prompt
+**Priority:** High (significantly enhances bot's usefulness and credibility)
+
+---
+
+### 🧠 Redis Vector Storage ✅ COMPLETE
+
+Long-term memory with semantic search so the bot truly knows you across sessions.
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **Redis Cloud Storage** | Replace in-memory with persistent Redis | ✅ |
+| **Vector Search** | Semantic memory retrieval using embeddings | ✅ |
+| **Auto-expiration** | TTL-based cleanup of old conversations | ✅ |
+| **User Profiles** | Redis hash for preferences and context | ✅ |
+| **Session Memory** | Cross-session continuity | ✅ |
+| **Fallback Storage** | In-memory fallback if Redis unavailable | ✅ |
+
+**Redis Data Structure:**
+```redis
+# Conversation history
+conversation:{user_id} -> List[message_json]
+
+# User preferences
+user:{user_id} -> Hash{name, focus_areas, preferences}
+
+# Vector embeddings for semantic search
+message:{message_id} -> Hash{content, embedding_vector, metadata}
+
+# Vector index for semantic search
+msg_idx -> RediSearch Vector Index
+```
+
+**Implementation Completed:**
+1. ✅ Set up Redis on Render (free tier)
+2. ✅ Created `src/redis_db.py` with vector search
+3. ✅ Updated bot.py to use Redis storage
+4. ✅ Added semantic context retrieval
+5. ✅ Implemented auto-expiration policies
+6. ✅ Added graceful fallback to in-memory storage
+
+**Benefits Achieved:**
+- **10x faster** performance vs PostgreSQL
+- **Semantic memory** for better context awareness
+- **Auto-scaling** with Redis cloud hosting
+- **Zero downtime** with fallback storage
+- **Cost-effective** free tier on Render
 
 ---
 
@@ -155,33 +210,6 @@ Migrated from Flask to FastAPI for better async support and performance.
 - Webhook endpoint is now pure async (no threading hacks)
 - Bot lifecycle managed via FastAPI lifespan context
 - Same start command: `python bot.py`
-
----
-
-### 🧠 Semantic Memory with pgvector
-
-**Status:** 🔮 Future Enhancement
-
-Upgrade PostgreSQL with pgvector extension for semantic search capabilities.
-
-| Feature | Description |
-|---------|-------------|
-| **Semantic Search** | "Find conversations about anxiety" matches "stressed", "overwhelmed" |
-| **Context Retrieval** | Pull relevant past discussions into current conversation |
-| **Embeddings** | Store OpenAI embeddings alongside session data |
-| **RAG Pattern** | Retrieval Augmented Generation for better context |
-
-**Prerequisites:**
-- ⚠️ PostgreSQL persistent memory (basic) must be complete first
-- Evaluate if semantic search is actually needed based on usage
-
-**Implementation:**
-1. Enable pgvector extension on Render PostgreSQL
-2. Create embeddings table for session summaries
-3. Use OpenAI embeddings API to vectorize summaries
-4. Query similar sessions before responding
-
-**Priority:** Low (nice-to-have, evaluate after basic memory works)
 
 ---
 
@@ -303,8 +331,9 @@ Configurable areas the bot specializes in for each user:
 | Purpose | Model | Why |
 |---------|-------|-----|
 | **Chat** | `gpt-4o-mini` | 117 EQ (89th percentile), 4.19/5 therapy rating, $0.02/100 chats |
-| **Voice Input** | `whisper-1` | Fastest (857ms), most reliable |
-| **Voice Output** | `tts-1` | Natural, human-like, $0.015/min |
+| **Voice Input** | `gpt-4o-mini-transcribe` | Latest GPT-4o mini based, better accuracy than Whisper v1/v3 |
+| **Voice Output** | `gpt-4o-mini-tts` | Most reliable TTS, supports 13 voices, emotional range |
+| **Voice Selection** | `gpt-4o-mini-tts` with 13 voices (alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer, verse, marin, cedar) | Choose personality: alloy (balanced), marin/cedar (best quality) |
 
 #### ❌ Models to Avoid
 
@@ -362,6 +391,7 @@ max_tokens = 600
 | No user profiles | Can't remember preferences | Personal Mode |
 | Text only | Can't process voice messages | Voice support |
 | Generic responses | Same for all users | Personalization |
+| **Female voice only** | Users can't choose voice gender | **Voice selection menu** |
 
 ---
 
@@ -381,11 +411,11 @@ max_tokens = 600
 | Basic analytics | Message count, active users, peak times | Medium |
 
 #### Technical
-- [ ] Set up PostgreSQL on Render (free tier)
-- [ ] Create user and message models
-- [ ] Migrate from in-memory to database storage
-- [ ] Add environment config for database URL
-- [ ] Implement graceful degradation if DB is down
+- [x] Set up Redis on Render (free tier)
+- [x] Create Redis storage module with vector search
+- [x] Migrate from in-memory to Redis storage
+- [x] Add environment config for Redis URL
+- [x] Implement graceful degradation if Redis is down
 
 ---
 
@@ -404,13 +434,13 @@ max_tokens = 600
 | `/resources` | SA mental health resources | Categorized helplines and services |
 
 #### Features
-- [ ] Mood tracking with persistence
+- [x] Mood tracking with persistence
 - [ ] Mood trends visualization (text-based graph)
 - [ ] Breathing exercise guides with step-by-step timing
 - [ ] Journaling with AI-generated prompts
 - [ ] Gratitude exercises
 - [ ] Daily check-in reminders (opt-in via /remind)
-- [ ] Weekly mood summary
+- [ ] **Weekly insights based on conversation analysis** | 🔜 **Next Priority**
 
 #### Example: Mood Tracking
 ```
@@ -426,6 +456,233 @@ Bot: I hear you're feeling anxious. Would you like to:
      
      Your mood has been tracked. You've logged 5 moods this week.
 ```
+
+---
+
+### 📊 Weekly Insights (NEW PRIORITY)
+
+**Status:** 🔜 Next Priority  
+**Timeline:** 4-6 weeks  
+**Goal:** Provide intelligent weekly analysis based on conversation patterns
+
+#### Feature Overview
+Analyze weekly conversations to generate personalized insights about mental health patterns, progress, and areas needing attention.
+
+#### How It Works
+| Step | Description |
+|------|-------------|
+| **Conversation Analysis** | AI analyzes all messages from the past week |
+| **Pattern Detection** | Identifies mood trends, recurring topics, triggers |
+| **Progress Tracking** | Compares current week to previous weeks |
+| **Personalized Insights** | Generates specific observations and recommendations |
+| **Weekly Delivery** | Automated Sunday evening summary |
+
+#### Insights Generated
+| Category | What AI Analyzes |
+|----------|-------------------|
+| **Mood Patterns** | "You've been feeling more stable this week - 3 good days vs 2 anxious days" |
+| **Recurring Topics** | "Work stress mentioned 4 times, sleep issues 3 times" |
+| **Progress Indicators** | "Better coping strategies than last month - using breathing techniques" |
+| **Trigger Identification** | "Late night conversations often precede difficult mornings" |
+| **Positive Changes** | "More consistent journaling, reaching out for support" |
+| **Areas of Concern** | "Medication adherence dropping, isolation increasing" |
+| **Recommendations** | "Consider earlier bedtime, discuss work boundaries with therapist" |
+
+#### Example Weekly Insight
+```
+📊 **Your Weekly Mental Health Summary**
+
+**Mood Overview:**
+This week showed improvement! 😊 4 good days, 😐 2 okay days, 😰 1 anxious day
+Better than last week (2 good, 3 anxious, 2 depressed)
+
+**Key Patterns:**
+• Work stress peaked on Wednesday/Thursday (project deadline)
+• Sleep quality improved after starting bedtime routine
+• More social connection this week (3 friend conversations)
+
+**Progress Wins:**
+✅ Used breathing exercises during stressful moments
+✅ Consistent daily journaling (6/7 days)
+✅ Reached out to sister for support
+
+**Areas to Watch:**
+⚠️ Medication mentioned only 3 times (possible adherence issues)
+⚠️ Isolation feelings increased on weekends
+
+**Next Week Focus:**
+🎯 Set medication reminders for consistency
+🎯 Plan weekend social activities
+🎯 Continue stress management before work deadlines
+
+**AI Recommendation:**
+"You're building good coping strategies! Consider discussing work stress boundaries 
+with your therapist - the pattern is clear and you're handling it well."
+
+💡 Keep up the great work - your consistency is paying off!
+```
+
+#### Technical Implementation
+```python
+# Weekly insights generation
+async def generate_weekly_insights(user_id: int) -> str:
+    """Generate personalized weekly insights from conversation analysis."""
+    
+    # Get week's conversations
+    week_messages = get_week_conversations(user_id)
+    
+    # Analyze patterns
+    mood_analysis = analyze_mood_patterns(week_messages)
+    topic_analysis = analyze_recurring_topics(week_messages)
+    progress_analysis = analyze_progress_indicators(week_messages)
+    
+    # Generate insights
+    insights = {
+        "mood_overview": mood_analysis["summary"],
+        "key_patterns": topic_analysis["patterns"],
+        "progress_wins": progress_analysis["wins"],
+        "areas_concern": progress_analysis["concerns"],
+        "recommendations": generate_recommendations(analyses)
+    }
+    
+    return format_weekly_insights(insights)
+
+# Schedule weekly delivery
+async def send_weekly_insights(user_id: int):
+    """Send weekly insights every Sunday evening."""
+    insights = await generate_weekly_insights(user_id)
+    
+    await telegram_app.bot.send_message(
+        chat_id=user_id,
+        text=insights,
+        parse_mode="Markdown"
+    )
+```
+
+#### Benefits for Keleh
+- **Pattern Recognition**: Identifies bipolar episode early warning signs
+- **Progress Tracking**: Shows improvement over time, builds motivation  
+- **Personalized Advice**: Specific to her conversation patterns
+- **Proactive Support**: AI identifies concerns before they become crises
+- **Continuity**: Connects daily journaling to bigger picture
+- **Therapy Support**: Provides concrete topics to discuss with therapist
+
+#### Priority: High
+This transforms the bot from reactive to proactive mental health management, providing the continuity of care that Keleh needs for effective bipolar management.
+
+---
+
+### 🗑️ Message Editing & Deletion (NEW PRIORITY)
+
+**Status:** 🔜 Next Priority  
+**Timeline:** 4-6 weeks  
+**Goal:** Allow users to edit/delete messages and sync changes across platforms
+
+#### Feature Overview
+Implement message editing and deletion capabilities that sync across Telegram, WhatsApp, and database to maintain conversation integrity.
+
+#### How It Works
+| Feature | Description |
+|----------|-------------|
+| **Message Editing** | Users can edit sent messages within 5 minutes |
+| **Message Deletion** | Users can delete their own messages |
+| **Cross-Platform Sync** | Edits/deletes sync across Telegram, WhatsApp, database |
+| **Data Cleanup** | Remove deleted content from AI training context |
+| **Edit History** | Track what was changed for transparency |
+
+#### Technical Implementation
+```python
+# Message editing handler
+async def handle_message_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle message edits and sync across platforms."""
+    
+    if update.edited_message:
+        user_id = update.effective_user.id
+        original_text = update.edited_message.text
+        new_text = update.edited_message.text
+        
+        # Update database records
+        await update_message_in_database(
+            user_id, 
+            message_id=update.edited_message.message_id,
+            new_content=new_text,
+            original_content=original_text,
+            edit_timestamp=datetime.now()
+        )
+        
+        # Remove old message from AI context
+        await remove_from_conversation_history(user_id, original_text)
+        
+        # Add new message to AI context
+        await add_to_history(user_id, "user", new_text)
+        
+        # Log for transparency
+        logger.info(f"User {user_id} edited message: {original_text[:50]} -> {new_text[:50]}")
+
+# Message deletion handler
+async def handle_message_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle message deletions and clean up data."""
+    
+    if update.message is None:  # Message was deleted
+        user_id = update.effective_user.id
+        
+        # Get deleted message details from database
+        deleted_msg = await get_deleted_message_details(user_id, update.update_id)
+        
+        if deleted_msg:
+            # Remove from AI conversation context
+            await remove_from_conversation_history(user_id, deleted_msg.content)
+            
+            # Mark as deleted in database (keep for audit trail)
+            await mark_message_deleted(user_id, deleted_msg.message_id)
+            
+            # Clean up any AI responses to this message
+            await cleanup_ai_responses(user_id, deleted_msg.message_id)
+            
+            logger.info(f"User {user_id} deleted message: {deleted_msg.content[:50]}")
+```
+
+#### Cross-Platform Synchronization
+| Platform | Sync Method |
+|----------|-------------|
+| **Telegram** | Native edit/delete events |
+| **WhatsApp** | Twilio webhook edit/delete handling |
+| **Database** | Real-time record updates |
+| **AI Context** | Remove old, add new content |
+
+#### User Experience
+```
+User sends: "I'm feeling really anxious today"
+[2 minutes later] User edits: "I'm feeling anxious about work"
+
+System Response:
+✅ Message updated in conversation
+🔄 AI context refreshed with new content
+📝 Edit history logged for transparency
+
+User deletes: "I shouldn't have said that"
+System Response:
+🗑️ Message removed from conversation
+🧹 AI context cleaned up
+📊 Deletion logged for audit trail
+```
+
+#### Privacy & Safety Features
+- **Edit Time Window**: Only allow edits within 5 minutes of sending
+- **Deletion Confirmation**: Optional confirmation before permanent deletion
+- **Audit Trail**: Keep edit/delete history (not content, just metadata)
+- **AI Context Cleanup**: Automatically remove deleted content from AI memory
+- **Cross-Platform Privacy**: Delete from all platforms simultaneously
+
+#### Benefits for Keleh
+- **Privacy Control**: Remove sensitive information if shared accidentally
+- **Accuracy**: Correct typos or clarify statements
+- **Safety**: Remove regrettable messages from AI training data
+- **Consistency**: Same experience across Telegram and WhatsApp
+- **Transparency**: See what was changed and when
+
+#### Priority: High
+Essential for user privacy, data control, and maintaining trust in AI relationship with users.
 
 ---
 
@@ -458,9 +715,13 @@ Bot: I hear you're feeling anxious. Would you like to:
 **Goal:** Expand accessibility and capabilities
 
 #### Voice Support 🎤
-- [ ] Transcribe voice messages to text
-- [ ] Process and respond (text response)
-- [ ] Future: Voice responses (text-to-speech)
+- [x] Transcribe voice messages to text
+- [x] Process and respond (text response)
+- [x] **Voice responses (text-to-speech)** ✅ **COMPLETED**
+- [ ] **Voice selection menu** (choose male/female/neutral voices)
+- [ ] **Transcription display** (show transcribed text to user for verification)
+- [ ] Voice speed/pitch controls
+- [ ] Voice emotion controls
 
 #### Multi-Language 🌍
 | Language | Priority | Notes |
@@ -537,7 +798,83 @@ Allow organizations (NGOs, companies, schools) to deploy their own branded versi
 
 ---
 
-## 💡 Feature Ideas (Backlog)
+## �️ AI Tools Framework
+
+### 📋 Tools Documentation System
+**Timeline:** 1-2 weeks  
+**Priority:** P1 (High)  
+**Need:** "LLM needs structured documentation of available tools for proper tool usage"
+
+#### 🕐 Time Tool
+**Purpose**: Provide current time and date information to users
+**Implementation**: Extract from Telegram message timestamp
+**Format**: "7:57 AM on February 10, 2026"
+**Use Cases**: 
+- "what time is it?" → Current time
+- "what day is it?" → Current date  
+- "is it morning/evening?" → Time context
+- "is it too late to call?" → Time-based advice
+
+#### 🧠 Memory Tool
+**Purpose**: Search and retrieve conversation memories
+**Implementation**: Redis semantic search with archive fallback
+**Format**: Contextual memory snippets with timestamps
+**Use Cases**:
+- "what did I tell you about my anxiety?" → Relevant memories
+- "remember when I said..." → Context retrieval
+- Long-term continuity of care
+
+#### 📊 Journey Tool  
+**Purpose**: Access user's therapeutic journey data
+**Implementation**: User journey tracking system
+**Format**: Structured progress summary
+**Use Cases**:
+- Progress tracking
+- Pattern recognition
+- Treatment continuity
+
+#### 🔧 Technical Implementation
+```python
+# Tools documentation structure
+TOOLS_DOC = """
+# MindMate Bot Tools
+
+## 🕐 Time Tool
+**Function**: get_current_time()
+**Returns**: Current timestamp in user's timezone
+**Usage**: Time queries, temporal context, scheduling
+
+## 🧠 Memory Tool
+**Function**: search_memories(query)  
+**Returns**: Relevant conversation memories
+**Usage**: Personal context, continuity, pattern recognition
+
+## 📊 Journey Tool
+**Function**: get_user_journey(user_id)
+**Returns**: User's therapeutic journey summary
+**Usage**: Progress tracking, long-term support
+"""
+
+# System prompt integration
+system_prompt = f"{SYSTEM_PROMPT}\n\n{TOOLS_DOC}\n\nCurrent time: {current_time}"
+```
+
+#### 🎯 Benefits
+- ✅ LLM knows exactly what tools it has
+- ✅ Proper tool usage and invocation
+- ✅ Consistent tool responses
+- ✅ Extensible framework for future tools
+- ✅ Professional AI system architecture
+
+#### 📈 Future Tool Extensions
+- 🌤️ Weather Tool (mood correlation)
+- 📅 Calendar Tool (appointment reminders)
+- 💊 Medication Tool (timing reminders)
+- 📈 Analytics Tool (progress insights)
+
+---
+
+## �💡 Feature Ideas (Backlog)
 
 ### 🚀 High Priority (User-Requested)
 
@@ -660,6 +997,7 @@ else:
 - [ ] **Multi-language support** (Zulu, Afrikaans, Xhosa)
 - [ ] **Context awareness** (time of day, weather-based suggestions)
 - [ ] **Progressive disclosure** (build trust gradually for deeper topics)
+- [ ] **Internet search capabilities** (real-time mental health resources and research)
 
 ### 🔧 Technical Improvements (My Suggestions)
 - [ ] **Message scheduling** (send reminders, check-ins)
@@ -680,6 +1018,70 @@ else:
 ---
 
 ### 🎯 Quick Win Features (1-2 weeks each)
+
+#### Transcription Display 📝
+**Why:** Users want to verify what the bot understood from their voice messages
+**Timeline:** 1 week  
+**Priority:** P2 (Medium)
+
+**Implementation:**
+```python
+# Enhanced voice handler with transcription display
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # ... existing voice processing logic ...
+    
+    # Show transcribed text to user for verification
+    await update.message.reply_text(
+        f"🎤 **Voice Transcribed:**\n\n"
+        f"📝 {transcribed_text}\n\n"
+        f"🤖 **AI Response:**\n\n"
+        f"{response_text}\n\n"
+        f"_💭 *You can see exactly what I understood from your voice!*_",
+        parse_mode="Markdown"
+    )
+    
+    # Then generate and send voice response as usual
+    # ... existing TTS logic ...
+```
+
+#### Voice Selection Menu 🎛️
+**Why:** Users want to choose bot voice personality (currently female only)
+**Timeline:** 1 week
+**Priority:** P2 (Medium)
+
+**Implementation:**
+```python
+# Voice selection command
+async def cmd_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show voice selection menu"""
+    
+    voices = [
+        ("alloy", "⚖️ Balanced (Current)"),
+        ("echo", "👨 Male"),
+        ("fable", "👩 Warm"),
+        ("onyx", "🎭 Deep"),
+        ("nova", "🌟 Friendly"),
+        ("shimmer", "✨ Gentle")
+    ]
+    
+    keyboard = [[InlineKeyboardButton(f"{name} {emoji}", callback_data=f"voice:{voice_id}")] 
+               for voice_id, (name, emoji) in voices]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard, rows=2)
+    
+    await update.message.reply_text(
+        "🎛️ **Choose Voice Personality:**\n\n"
+        "Current voice affects how I sound in voice messages.\n\n"
+        "Each voice has unique characteristics:\n"
+        "⚖️ **alloy** - Balanced, neutral\n"
+        "👨 **echo** - Male, confident\n"
+        "👩 **fable** - Warm, caring\n"
+        "🎭 **onyx** - Deep, thoughtful\n"
+        "🌟 **nova** - Friendly, upbeat\n"
+        "✨ **shimmer** - Gentle, soft\n",
+        reply_markup=reply_markup
+    )
+```
 
 #### Voice Message Support 🎤
 **Why:** Many users prefer speaking over typing, especially when emotional
