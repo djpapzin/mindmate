@@ -2,10 +2,10 @@
 
 ## Current Setup (Post-Migration)
 
-| Bot | Render Service | Branch | Purpose |
-|-----|----------------|--------|---------|
-| `@mindmate_dev_bot` | `mindmate-dev` | `main` | **Production** - Your partner uses this daily |
-| `@mywellnesscompanion_bot` | `mindmate` | `feature/*` | **Staging** - Your testing ground |
+| Bot | Render Service | Branch | URL | Purpose |
+|-----|----------------|-------|--------|---------|
+| `@mindmate_dev_bot` | `mindmate` | `main` | https://mindmate-dev.onrender.com | **Production** - Your partner uses this daily |
+| `@mywellnesscompanion_bot` | `mindmate-dev` | `feature/*` | https://mindmate-uidn.onrender.com | **Staging** - Your testing ground |
 
 ## What Was Done
 
@@ -47,17 +47,21 @@ git push origin main
 
 ## Render Service Details
 
-### Production (`mindmate-dev`)
+### Production (`mindmate`)
 - **Bot**: `@mindmate_dev_bot`
 - **Branch**: `main`
+- **URL**: https://mindmate-dev.onrender.com
 - **Auto-deploy**: ON
-- **Redis**: Dev Redis (now production)
+- **Redis**: Production Redis instance (`mindmate-redis`)
+- **Database**: Redis with OpenAI embeddings (semantic search enabled)
 
-### Staging (`mindmate`)
+### Staging (`mindmate-dev`)
 - **Bot**: `@mywellnesscompanion_bot`
 - **Branch**: `feature/*` (varies)
+- **URL**: https://mindmate-uidn.onrender.com
 - **Auto-deploy**: ON (or manual)
 - **Redis**: Separate Redis instance
+- **Database**: Redis with OpenAI embeddings (semantic search enabled)
 
 ## Quick Reference
 

@@ -21,7 +21,7 @@
 | 💬 **Empathetic Chat** | AI-powered conversations with emotional intelligence |
 | 🚨 **Crisis Detection** | Automatic detection with SA helpline resources (SADAG) |
 | 📝 **Persistent Memory** | Redis-powered cross-session conversation history |
-| 🔍 **Semantic Search** | Vector-based memory retrieval for better context |
+| 🔍 **Semantic Search** | Vector-based memory retrieval using OpenAI embeddings |
 | 🔓 **Personal Mode** | Premium experience with direct advice (no disclaimers) |
 | 🎛️ **Voice Messages** | Send voice notes → bot responds with voice (Smart Caption Handling) ✅ **COMPLETED** |
 | 🧪 **A/B Testing** | Built-in model comparison tools |
@@ -71,7 +71,9 @@ A private, unfiltered AI therapist experience for authorized users.
 | **Bot Library** | python-telegram-bot 21.0 |
 | **AI** | OpenAI GPT-4o-mini |
 | **Voice** | Smart Caption Handling (gpt-4o-mini-transcribe + gpt-4o-mini-tts) |
+| **Embeddings** | OpenAI text-embedding-3-small (vector search) |
 | **Hosting** | Render (free tier) |
+| **Database** | Redis (persistent storage) |
 | **Uptime** | UptimeRobot |
 
 ### Architecture
@@ -86,11 +88,10 @@ Telegram → Webhook → FastAPI → OpenAI → Response
 ## 🚀 Deployment
 
 ### Live Instances
-
-| Bot | URL | Branch |
-|-----|-----|--------|
-| **Production** | @mywellnesscompanion_bot | `main` |
-| **Development** | @mindmate_dev_bot | `feature/*` |
+| Bot | URL | Branch | Purpose |
+|-----|-----|-----|-------|---------|
+| **Production** | @mindmate_dev_bot | https://mindmate-dev.onrender.com | `main` branch |
+| **Staging** | @mywellnesscompanion_bot | https://mindmate-uidn.onrender.com | `feature/*` branches |
 
 ### Deploy Your Own
 
