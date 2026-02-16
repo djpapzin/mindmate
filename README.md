@@ -23,8 +23,7 @@
 | 📝 **Persistent Memory** | Redis-powered cross-session conversation history |
 | 🔍 **Semantic Search** | Vector-based memory retrieval using OpenAI embeddings |
 | 🔓 **Personal Mode** | Premium experience with direct advice (no disclaimers) |
-| 🎛️ **Voice Messages** | Send voice notes → bot responds with voice (Smart Caption Handling) ✅ **COMPLETED** |
-| 🧪 **A/B Testing** | Built-in model comparison tools |
+| �️ **Voice Messages** | Send voice notes → bot responds with voice ✅ **COMPLETED** |
 | ⚡ **FastAPI Backend** | Modern async architecture with webhooks |
 | 🛡️ **Graceful Fallback** | In-memory storage if Redis unavailable |
 
