@@ -19,6 +19,9 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import uvicorn
 
+# Brave web search helper (optional, opt-in via explicit trigger)
+from web_search import search_web
+
 # Import Redis database module (with fallback)
 try:
     from redis_db import DatabaseManager, Message
@@ -1047,6 +1050,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
     message = update.message.text
     personal_mode = is_personal_mode(user_id)
+
+    # ------------------------------------------------------------------
+    # Optional, explicit Brave web search trigger
+    # Pattern: messages starting with "web:" (e.g. "web: bitcoin price today")
+    # keep this opt-in only; no background/implicit web calls
+    # ------------------------------------------------------------------
+    web_results = None
+    web_query = None
+
+    stripped = message.strip()
+    lowered = stripped.lower()
+    if lowered.startswith("web:"):
+        # Everything after the first colon is treated as the web query
+        web_query = stripped.split(":", 1)[1].strip()
+        if web_query:
+            try:
+                web_results = search_web(web_query, max_results=5)
+                logger.info(f"Fetched web results for user {user_id} query: {web_query[:80]}...")
+            except Exception as e:  # Defensive; search_web should already be safe
+                logger.error(f"Web search failed for user {user_id}: {e}")
+                await update.message.reply_text(
+                    "I couldn't fetch web results right now, so I'll respond without live web data."
+                )
+        else:
+            await update.message.reply_text(
+                "To use web search, type something like: `web: bitcoin price today`.",
+            )
+            return
+
+        # When using web search, treat the user's visible query as the portion after `web:`
+        message = web_query
     
     # Check if this is a reply to a scheduled daily summary message
     if user_id in daily_summary_tracking and daily_summary_tracking[user_id].get("waiting_for_summary"):
@@ -1080,6 +1114,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Add time context for temporal awareness
     current_time = update.message.date.strftime("%I:%M %p on %B %d, %Y")
     system_prompt = f"{system_prompt}\n\nCurrent time: {current_time}"
+
+    # If we have explicit web search results, inject them as additional
+    # system context rather than raw user content.
+    if web_results:
+        system_prompt = (
+            f"{system_prompt}\n\n"
+            f"You also have fresh web search results fetched for the user's query. "
+            f"Use them as factual, time-sensitive context, but still reason carefully.\n\n"
+            f"{web_results}"
+        )
     
     mode_str = "PERSONAL" if personal_mode else "STANDARD"
     logger.info(f"Message from user {user_id} [{mode_str}] using model {current_model}")
