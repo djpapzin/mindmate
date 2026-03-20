@@ -11,6 +11,7 @@ import tempfile
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -65,7 +66,9 @@ def send_markdown_message(update: Update, text: str) -> None:
 # Configuration
 # =============================================================================
 
-load_dotenv()
+# Load env from this project only (avoid global OpenClaw .env)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=True)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
