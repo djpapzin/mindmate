@@ -329,7 +329,7 @@ bot_running = False
 processed_messages: set[int] = set()
 MAX_PROCESSED_MESSAGES = 1000  # Keep last 1000 message IDs
 
-# Pending context for user confirmation
+# Pending file/context confirmation state for uploaded items
 pending_context: dict[int, dict] = {}
 
 # User journey tracking for continuity of care
@@ -848,35 +848,33 @@ async def cmd_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await send_markdown_message(update, "This feature is only available in Personal Mode.")
         return
     
-    # Check if there's a pending file to confirm
-    pending_file = pending_files.get(user_id)
-    if not pending_file:
+    # Check if there's a pending file/context to confirm
+    pending_item = pending_context.get(user_id)
+    if not pending_item:
         await update.message.reply_text(
             "❓ **No pending file to confirm.**\n\n"
             "Please upload a file first, then use /confirm to save it to my memory."
         )
         return
     
-    # Save the file content to conversation history
-    file_content = pending_file["content"]
-    file_type = pending_file["type"]
-    file_name = pending_file["name"]
+    file_info = pending_item["file_info"]
+    description = pending_item["description"]
     
-    await add_to_history(user_id, "system", f"USER FILE ({file_type}): {file_name}\n\n{file_content}")
+    await add_to_history(user_id, "system", f"USER FILE: {file_info}\n\n{description}")
     
     # Update journey tracking with file insights
-    update_context_from_message(user_id, f"Uploaded {file_type}: {file_content[:200]}")
+    update_context_from_message(user_id, f"Uploaded file: {description[:200]}")
     
-    # Clear pending file
-    del pending_files[user_id]
+    # Clear pending file/context
+    del pending_context[user_id]
     
     await update.message.reply_text(
         f"✅ **File saved to memory!**\n\n"
-        f"📄 **{file_name}** ({file_type}) has been saved to our conversation history.\n\n"
+        f"📄 **{file_info}** has been saved to our conversation history.\n\n"
         f"💡 I'll use this information to provide better, more personalized support."
     )
     
-    logger.info(f"User {user_id} confirmed file: {file_name}")
+    logger.info(f"User {user_id} confirmed file/context: {file_info}")
 
 
 async def cmd_decline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -887,28 +885,27 @@ async def cmd_decline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await send_markdown_message(update, "This feature is only available in Personal Mode.")
         return
     
-    # Check if there's a pending file to decline
-    pending_file = pending_files.get(user_id)
-    if not pending_file:
+    # Check if there's a pending file/context to decline
+    pending_item = pending_context.get(user_id)
+    if not pending_item:
         await update.message.reply_text(
             "❓ **No pending file to decline.**\n\n"
             "Please upload a file first, then use /decline to discard it."
         )
         return
     
-    file_name = pending_file["name"]
-    file_type = pending_file["type"]
+    file_info = pending_item["file_info"]
     
-    # Clear pending file
-    del pending_files[user_id]
+    # Clear pending file/context
+    del pending_context[user_id]
     
     await update.message.reply_text(
         f"🗑️ **File discarded.**\n\n"
-        f"📄 **{file_name}** ({file_type}) has been removed and not saved to memory.\n\n"
+        f"📄 **{file_info}** has been removed and not saved to memory.\n\n"
         f"💡 Your privacy is important - nothing was retained."
     )
     
-    logger.info(f"User {user_id} declined file: {file_name}")
+    logger.info(f"User {user_id} declined file/context: {file_info}")
 
 
 async def cmd_journey(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
