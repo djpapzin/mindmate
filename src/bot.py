@@ -22,14 +22,18 @@ import uvicorn
 # Brave web search helper (optional, opt-in via explicit trigger)
 from web_search import search_web
 
-# Import Redis database module (with fallback)
+# Import database module - PostgreSQL preferred, fallback to Redis, then memory
+from postgres_db import PostgresDatabase, Message
+from postgres_db import InMemoryDatabase as PostgresInMemoryDatabase
+
+# Try PostgreSQL first, fall back to Redis, then in-memory
+DB_AVAILABLE = "postgres"
+REDIS_AVAILABLE = False
 try:
-    from redis_db import DatabaseManager, Message
+    from redis_db import DatabaseManager as RedisManager, Message
     REDIS_AVAILABLE = True
 except ImportError:
-    REDIS_AVAILABLE = False
-    DatabaseManager = None
-    Message = None
+    RedisManager = None
 
 # Unique instance ID to help debug multiple instances
 INSTANCE_ID = str(uuid.uuid4())[:8]
@@ -377,19 +381,19 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events for FastAPI."""
     global telegram_app, db_manager
     
-    # Startup: Initialize Redis database first
-    logger.info(f"[{INSTANCE_ID}] Initializing Redis database...")
+    # Startup: Initialize PostgreSQL database first
+    logger.info(f"[{INSTANCE_ID}] Initializing PostgreSQL database...")
+    
+    db_url = os.environ.get('NEON_MINDMATE_DB_URL') or os.environ.get('DATABASE_URL')
     
     try:
-        db_manager = DatabaseManager(REDIS_URL, openai_client)
+        db_manager = PostgresDatabase(db_url, openai_client)
         await db_manager.connect()
-        logger.info(f"[{INSTANCE_ID}] ✅ Redis database connected successfully!")
+        logger.info(f"[{INSTANCE_ID}] ✅ PostgreSQL database connected successfully!")
     except Exception as e:
-        logger.error(f"[{INSTANCE_ID}] ❌ Failed to connect to Redis: {e}")
+        logger.error(f"[{INSTANCE_ID}] ❌ Failed to connect to PostgreSQL: {e}")
         logger.info(f"[{INSTANCE_ID}] 🔄 Will use in-memory fallback storage")
-        # Create fallback database manager
-        db_manager = DatabaseManager(REDIS_URL, openai_client)
-        # Don't connect - will use fallback mode
+        db_manager = PostgresInMemoryDatabase()
     
     # Initialize and start the Telegram bot
     logger.info(f"[{INSTANCE_ID}] Starting MindMate Bot...")
