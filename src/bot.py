@@ -314,7 +314,7 @@ Remember: I'm here to support, not replace professional help. 💙"""
 # =============================================================================
 
 # Redis Database Manager (replaces in-memory storage)
-db_manager: DatabaseManager = None
+db_manager: PostgresDatabase = None
 
 # Fallback in-memory storage for when Redis is unavailable
 conversation_history: dict[int, list[dict[str, str]]] = {}
