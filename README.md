@@ -35,6 +35,8 @@
 | `/help` | Show available commands |
 | `/mode` | Check your mode (Standard/Personal) |
 | `/model` | Switch AI models for A/B testing |
+| `/feedback` | Save a quick product note for review |
+| `/schedule` | Manage daily direct check-ins (07:00 SAST by default) |
 | `/voice` | Choose voice personality (coming soon) |
 
 ---
@@ -139,6 +141,26 @@ python bot.py
 TELEGRAM_BOT_TOKEN=your_token_here
 OPENAI_API_KEY=your_key_here
 RENDER_EXTERNAL_URL=https://your-app.onrender.com  # Optional: enables webhooks
+```
+
+### Daily direct check-ins at 07:00 SAST
+MindMate's built-in daily heartbeat scheduler sends by **direct message** unless you explicitly set a group chat/topic target.
+
+Use these env values for DJ Papzin's 07:00 SAST DM heartbeat:
+
+```env
+DAILY_HEARTBEAT_ENABLED=true
+DAILY_HEARTBEAT_HOUR=7
+DAILY_HEARTBEAT_TIMEZONE=Africa/Johannesburg
+DAILY_HEARTBEAT_ALLOWED_USER_IDS=339651126
+DAILY_HEARTBEAT_CHAT_ID=
+DAILY_HEARTBEAT_MESSAGE_THREAD_ID=
+```
+
+Then in Telegram, open a DM with the bot as DJ Papzin and run:
+
+```text
+/schedule on
 ```
 
 ---

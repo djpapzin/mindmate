@@ -101,10 +101,10 @@ PORT = int(os.getenv("PORT", 10000))
 MAX_HISTORY_LENGTH = 10
 AUTO_WEB_SEARCH_ENABLED = os.getenv("AUTO_WEB_SEARCH_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 DAILY_HEARTBEAT_ENABLED = os.getenv("DAILY_HEARTBEAT_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
-DAILY_HEARTBEAT_HOUR = int(os.getenv("DAILY_HEARTBEAT_HOUR", "9"))
+DAILY_HEARTBEAT_HOUR = int(os.getenv("DAILY_HEARTBEAT_HOUR", "7"))
 DAILY_HEARTBEAT_WINDOW_MINUTES = max(1, int(os.getenv("DAILY_HEARTBEAT_WINDOW_MINUTES", "15")))
 DAILY_HEARTBEAT_POLL_SECONDS = max(30, int(os.getenv("DAILY_HEARTBEAT_POLL_SECONDS", "60")))
-DAILY_HEARTBEAT_TIMEZONE = os.getenv("DAILY_HEARTBEAT_TIMEZONE", "UTC").strip() or "UTC"
+DAILY_HEARTBEAT_TIMEZONE = os.getenv("DAILY_HEARTBEAT_TIMEZONE", "Africa/Johannesburg").strip() or "Africa/Johannesburg"
 DAILY_HEARTBEAT_CHAT_ID = _parse_optional_int_env("DAILY_HEARTBEAT_CHAT_ID")
 DAILY_HEARTBEAT_MESSAGE_THREAD_ID = _parse_optional_int_env("DAILY_HEARTBEAT_MESSAGE_THREAD_ID")
 DAILY_HEARTBEAT_ALLOWED_USER_IDS = {
@@ -357,7 +357,7 @@ HELP_MESSAGE = """**How I can support you:**
 /decline - Decline saving of last uploaded file
 /journey - Show your journey tracking and what I've learned about you
 /journal - Daily journaling and mood tracking
-/schedule - Set up automated daily journaling reminders
+/schedule - Manage your daily 07:00 SAST direct check-ins
 /feedback - Share a quick note about what helped or felt off
 
 **Live web lookup (explicit only):**
@@ -1740,7 +1740,7 @@ async def cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if DAILY_HEARTBEAT_CHAT_ID is not None and DAILY_HEARTBEAT_MESSAGE_THREAD_ID is not None
         else f"group chat **{DAILY_HEARTBEAT_CHAT_ID}**"
         if DAILY_HEARTBEAT_CHAT_ID is not None
-        else "direct message"
+        else "direct message (default)"
     )
 
     await send_markdown_message(
