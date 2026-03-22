@@ -571,13 +571,15 @@ HEARTBEAT_CURRENT_EVENTS_PATTERNS = (
 )
 HEARTBEAT_LOW_VALUE_PATTERNS = (
     re.compile(r"^/[a-z0-9_]+(?:\s|$)", re.IGNORECASE),
+    re.compile(r"^(?:search|browse|look up|lookup|google|find)(?:\s+the)?\s+web\b", re.IGNORECASE),
+    re.compile(r"^(?:search|browse|look up|lookup|google|find)\b", re.IGNORECASE),
     re.compile(r"\b(?:search|look up|lookup|google|find)\b.{0,30}\b(?:price|weather|news|score|stock|bitcoin|btc|crypto)\b", re.IGNORECASE),
     re.compile(r"\b(?:bitcoin|btc|crypto|stock|forex|weather|news|score)s?\b", re.IGNORECASE),
     re.compile(r"https?://", re.IGNORECASE),
 )
 HEARTBEAT_COMMAND_TERMS = {
-    "search", "google", "lookup", "look", "price", "prices", "weather", "news", "score", "scores",
-    "bitcoin", "btc", "crypto", "stock", "stocks", "forex", "translate", "summarize"
+    "search", "browse", "google", "lookup", "look", "find", "price", "prices", "weather", "news", "score", "scores",
+    "bitcoin", "btc", "crypto", "stock", "stocks", "forex", "translate", "summarize", "web"
 }
 
 
