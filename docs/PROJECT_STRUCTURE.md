@@ -1,151 +1,53 @@
 # 📁 MindMate Project Structure
 
-## 📂 Directory Overview
+This file reflects the current, conservative runtime truth.
+
+## Top-level overview
 
 ```
 mindmate/
-├── 📁 src/                    # Source code
-│   ├── 🤖 bot.py             # Main bot application (voice ✅)
-│   ├── 🗄️ database.py        # PostgreSQL connection & models
-│   └── 📄 config.py           # Configuration constants
-├── 📋 requirements.txt          # Python dependencies
-├── 🐳 Dockerfile              # Container configuration
-├── 📄 Procfile               # Render deployment config
-├── 📄 render.yaml            # Render service settings
-├── 📄 .env.example           # Environment variables template
-├── 📄 .gitignore             # Git ignore patterns
-├── 📚 docs/                  # Documentation
-│   ├── ARCHITECTURE.md      # System design
-│   ├── PERSONAL_MODE_UPDATE.md # Personal mode documentation
-│   ├── POSTGRESQL_INTEGRATION_CHECKLIST.md
-│   ├── PROJECT_STRUCTURE.md   # Project structure
-│   ├── ROADMAP.md             # Feature planning and timeline
-│   └── 📁 voice/             # Voice feature documentation
-│       └── VOICE_IMPLEMENTATION_TODO.md   # Voice implementation checklist
-├── 🔬 research/               # Research findings
-│   ├── MODEL_RESEARCH_FINDINGS.md
-│   ├── CHATGPT_RESEARCH_FINDINGS.md
-│   ├── GEMINI_RESEARCH_FINDINGS.md
-│   └── OPENAI_DIRECT_AUDIO_RESEARCH.md
-├── 📝 scripts/               # Utility scripts
-│   ├── test_voice.py        # Voice testing utilities
-│   └── test_bot.py          # Core bot functionality tests
-├── 📊 logs/                  # Application logs
-└── 🗂️ .windsurf/           # IDE configuration
+├── bot.py                       # Compatibility entrypoint that loads src/bot.py
+├── src/
+│   ├── bot.py                   # Main FastAPI + Telegram bot runtime
+│   ├── postgres_db.py           # Active PostgreSQL storage implementation
+│   ├── redis_db.py              # Legacy/deprecated Redis implementation retained for reference
+│   ├── storage/
+│   │   └── postgres.py          # Legacy/experimental duplicate Postgres helper (not runtime-active)
+│   └── web_search.py            # Explicit Brave web lookup helper
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── PROJECT_STRUCTURE.md
+│   ├── ROADMAP.md
+│   └── REDIS_IMPLEMENTATION_PLAN.md
+├── scripts/                     # Utility and migration scripts
+├── research/                    # Research notes and model findings
+├── render.yaml                  # Render deployment definition
+├── .env.example                 # Example environment configuration
+└── README.md                    # Main project overview
 ```
 
-## 📁 Core Files
+## Storage-related files
 
-### 🤖 `src/bot.py`
-**Purpose**: Main bot application with FastAPI + Telegram integration
-**Key Features**:
-- ✅ **Voice Messages**: Transcribe + respond with voice
-- ✅ **Personal Mode**: Therapeutic conversations
-- ✅ **Crisis Detection**: Immediate helpline resources
-- ✅ **Command Menu**: User-friendly interface
-- ✅ **Conversation History**: Persistent memory
+### `src/postgres_db.py`
+- **Status:** active
+- **Purpose:** primary persistent storage layer
+- **Runtime role:** stores conversation history, preferences, and feedback in PostgreSQL
+- **Fallback:** exposes the in-memory fallback used when PostgreSQL is unavailable
 
-**Voice Implementation**:
-```python
-# Voice processing constants
-VOICE_TRANSCRIPTION_MODEL = "whisper-1"
-VOICE_TTS_MODEL = "tts-1"
+### `src/redis_db.py`
+- **Status:** legacy / deprecated
+- **Purpose:** historical Redis implementation kept for migration/reference use
+- **Runtime role:** none in the current primary path
 
-# Voice handler
-async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Download voice → Transcribe with Whisper → Process with GPT → Generate TTS → Send voice
-```
+### `src/storage/postgres.py`
+- **Status:** inactive / experimental
+- **Purpose:** older duplicate Postgres helper kept conservatively to avoid destabilizing runtime during cleanup
+- **Runtime role:** none in the current bot startup path
 
-### 🗄️ `src/database.py`
-**Purpose**: PostgreSQL connection and data models
-**Features**:
-- User profiles and preferences
-- Conversation history storage
-- Voice selection persistence
-- Graceful fallback to in-memory
+## Deployment notes
 
-### 📋 `requirements.txt`
-**Key Dependencies**:
-```
-python-telegram-bot==21.0      # Telegram bot framework
-openai>=1.12.0,<2.0.0        # OpenAI API (Whisper + GPT + TTS)
-python-dotenv                   # Environment variables
-fastapi                         # Web framework
-uvicorn[standard]              # ASGI server
-aiofiles>=23.0.0,<24.0.0    # Async file operations for voice
-redis==5.0.1                   # Redis storage and vector search
-sentence-transformers==2.2.2  # Text embeddings for semantic search
-numpy==1.24.3                 # Vector operations
-pydantic                        # Data validation
-```
+- The active deployment expects **PostgreSQL** via `DATABASE_URL` or `NEON_MINDMATE_DB_URL`.
+- Current memory retrieval is **keyword-based**, not vector-semantic.
+- In-memory storage exists only as a resilience fallback, not as the preferred mode.
 
-## 🚀 Deployment
-
-### 🌐 Render Configuration
-- **Platform**: Render.com (free tier)
-- **Architecture**: FastAPI + Uvicorn + Webhook mode
-- **Database**: Redis (free tier) with vector search
-- **Webhook**: `https://mindmate-dev.onrender.com/webhook`
-
-### 🐳 Container Support
-- **Base**: Python 3.12 slim
-- **Process**: Single `python src/bot.py` command
-- **Port**: 10000 (Render standard)
-
-### ⚠️ Service Status Notes
-- **PostgreSQL Service**: Still running but NOT used by current implementation
-  - Connection attempts are Render health checks (normal behavior)
-  - Can be safely deleted or kept for future analytics
-  - No impact on Redis performance or functionality
-- **Redis Service**: Active primary storage for all bot operations
-
-## 📚 Documentation
-
-### 📋 Core Docs
-- **README.md**: Project overview and setup
-- **ARCHITECTURE.md**: System design and patterns
-- **ROADMAP.md**: Feature planning and timeline
-
-### 🔬 Research Docs
-- **MODEL_RESEARCH_FINDINGS.md**: AI model evaluation and selection
-- **OPENAI_DIRECT_AUDIO_RESEARCH.md**: Direct audio-to-audio model research
-
-### 📝 Implementation Docs
-- **VOICE_IMPLEMENTATION_TODO.md**: Voice feature implementation checklist → **docs/voice/**
-- **VOICE_ERROR_ANALYSIS.md**: Voice debugging and fixes → **docs/voice/**
-
-### 🎯 Current Status
-
-### ✅ **Completed Features**
-- [x] **Voice Messages**: Full voice-to-voice conversation
-- [x] **Personal Mode**: Therapeutic AI conversations
-- [x] **Crisis Detection**: Automatic resource provision
-- [x] **Command Menu**: Enhanced UX with emoji labels
-- [x] **Redis Vector Storage**: Persistent memory with semantic search
-- [x] **Conversation History**: Cross-session continuity with Redis
-- [x] **Semantic Memory**: Vector-based context retrieval
-- [x] **Graceful Fallback**: In-memory storage when Redis unavailable
-- [x] **MVP Completion**: All core features complete, production-ready
-
-### 🚧 **Current Limitations**
-- [ ] **Voice Selection**: Currently only alloy voice (alloy) - **Enhancement, not limitation**
-- [ ] **Voice Controls**: No speed/pitch/emotion adjustments - **Enhancement, not limitation**
-- [ ] **Multi-language**: English only - **Enhancement, not limitation**
-
-### 🎛️ **Next: Post-MVP Enhancements**
-**Priority**: P2 (Medium) - **Optional enhancements, not MVP requirements**
-**Timeline**: 1-2 weeks
-**Goal**: Add premium voice features
-
-**Available Voices**:
-- ⚖️ **alloy** (current) - Balanced, neutral
-- 👨 **echo** - Male, confident
-- 👩 **fable** - Warm, caring
-- 🎭 **onyx** - Deep, thoughtful
-- 🌟 **nova** - Friendly, upbeat
-- ✨ **shimmer** - Gentle, soft
-
----
-
-**Last Updated**: 2026-02-16  
-**Version**: v1.0.0 (MVP Complete - Production Ready)
+**Last Updated:** 2026-03-22

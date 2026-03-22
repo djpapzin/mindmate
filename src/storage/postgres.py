@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-MindMate PostgreSQL Storage
-Replaces Redis with PostgreSQL for persistence
+Legacy/experimental PostgreSQL storage module for MindMate.
+
+This file is not the active runtime storage path. The bot currently uses
+`src/postgres_db.py` for production PostgreSQL access. Retained conservatively
+for reference only; avoid wiring new runtime code to this module unless it is
+reviewed and intentionally adopted.
 """
 import os
 import json
@@ -12,7 +16,7 @@ from psycopg2.extras import RealDictCursor
 from psycopg2.pool import ThreadedConnectionPool
 
 class PostgresStorage:
-    """PostgreSQL storage for MindMate conversations and memory"""
+    """Legacy/experimental PostgreSQL helper kept for reference, not active runtime use."""
     
     def __init__(self, db_url=None):
         self.db_url = db_url or os.environ.get('DATABASE_URL') or os.environ.get('NEON_MINDMATE_DB_URL')

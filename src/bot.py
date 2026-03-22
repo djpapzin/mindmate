@@ -26,18 +26,11 @@ import uvicorn
 # Brave web search helper (optional, opt-in via explicit trigger)
 from web_search import build_web_attribution_line, search_web
 
-# Import database module - PostgreSQL preferred, fallback to Redis, then memory
-from postgres_db import PostgresDatabase, Message
+# Import the active storage module: PostgreSQL with an in-memory fallback.
+from postgres_db import Message, PostgresDatabase
 from postgres_db import InMemoryDatabase as PostgresInMemoryDatabase
 
-# Try PostgreSQL first, fall back to Redis, then in-memory
 DB_AVAILABLE = "postgres"
-REDIS_AVAILABLE = False
-try:
-    from redis_db import DatabaseManager as RedisManager, Message
-    REDIS_AVAILABLE = True
-except ImportError:
-    RedisManager = None
 
 # Unique instance ID to help debug multiple instances
 INSTANCE_ID = str(uuid.uuid4())[:8]
@@ -95,8 +88,6 @@ load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=True)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 PORT = int(os.getenv("PORT", 10000))
 MAX_HISTORY_LENGTH = 10
 AUTO_WEB_SEARCH_ENABLED = os.getenv("AUTO_WEB_SEARCH_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
@@ -370,10 +361,10 @@ Remember: I'm here to support, not replace professional help. 💙"""
 # Global State
 # =============================================================================
 
-# Redis Database Manager (replaces in-memory storage)
+# Active database manager: PostgreSQL in normal operation.
 db_manager: PostgresDatabase = None
 
-# Fallback in-memory storage for when Redis is unavailable
+# In-memory fallback used only when PostgreSQL is unavailable at startup or runtime.
 conversation_history: dict[int, list[dict[str, str]]] = {}
 user_model_selection: dict[int, str] = {}  # Track model per user for A/B testing
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
@@ -1033,12 +1024,12 @@ async def webhook(request: Request):
 # =============================================================================
 
 async def get_history(user_id: int) -> list[dict[str, str]]:
-    """Get conversation history for a user from Redis or fallback."""
+    """Get conversation history for a user from PostgreSQL or fallback memory."""
     if db_manager:
         try:
             return await db_manager.get_conversation_history(user_id, MAX_HISTORY_LENGTH)
         except Exception as e:
-            logger.warning(f"Failed to get history from Redis: {e}")
+            logger.warning(f"Failed to get history from PostgreSQL: {e}")
     
     # Fallback to in-memory storage
     return conversation_history.get(user_id, [])
@@ -1101,10 +1092,10 @@ def get_user_journey_summary(user_id: int) -> str:
     return " | ".join(summary_parts) if summary_parts else "Building understanding of your situation..."
 
 async def add_to_history(user_id: int, role: str, content: str) -> None:
-    """Add message to conversation history using Redis with fallback."""
+    """Add a message to PostgreSQL, with in-memory fallback if needed."""
     if db_manager:
         try:
-            # Create message object for Redis
+            # Create message object for PostgreSQL storage
             message = Message(
                 user_id=user_id,
                 content=content,
@@ -1115,7 +1106,7 @@ async def add_to_history(user_id: int, role: str, content: str) -> None:
             await db_manager.store_message(message)
             return
         except Exception as e:
-            logger.warning(f"Failed to store message in Redis: {e}")
+            logger.warning(f"Failed to store message in PostgreSQL: {e}")
     
     # Fallback to in-memory storage
     if user_id not in conversation_history:
@@ -1125,13 +1116,13 @@ async def add_to_history(user_id: int, role: str, content: str) -> None:
         conversation_history[user_id] = conversation_history[user_id][-MAX_HISTORY_LENGTH:]
 
 async def clear_history(user_id: int) -> None:
-    """Clear conversation history using Redis with fallback."""
+    """Clear conversation history from PostgreSQL, with in-memory fallback if needed."""
     if db_manager:
         try:
             await db_manager.clear_conversation(user_id)
             return
         except Exception as e:
-            logger.warning(f"Failed to clear history in Redis: {e}")
+            logger.warning(f"Failed to clear history in PostgreSQL: {e}")
     
     # Fallback to in-memory storage
     conversation_history.pop(user_id, None)
@@ -2031,8 +2022,8 @@ async def handle_daily_summary_response(update: Update, context: ContextTypes.DE
 def update_context_from_message(user_id: int, message: str) -> None:
     """Automatically update user journey based on conversation content.
     
-    This function uses keyword matching to detect important information in natural conversation.
-    It's NOT built into the AI - it's custom code that scans messages for specific patterns.
+    This function uses simple keyword matching to detect important information in natural conversation.
+    It's NOT built into the AI - it's custom application logic that scans messages for specific patterns.
     """
     message_lower = message.lower()
     

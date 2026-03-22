@@ -1,427 +1,79 @@
 # 🏗️ MindMate Architecture
 
-Visual diagrams to understand how MindMate works.
+Current architecture, aligned to the active runtime code.
 
 ---
 
-## 1️⃣ High-Level Architecture
+## High-level runtime flow
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         USER DEVICES                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│    📱 Telegram App              📱 WhatsApp (Future)            │
-│         │                              │                        │
-└─────────┼──────────────────────────────┼────────────────────────┘
-          │                              │
-          ▼                              ▼
-┌─────────────────────┐      ┌─────────────────────┐
-│   Telegram API      │      │   Twilio API        │
-│   (Webhook)         │      │   (Future)          │
-└─────────┬───────────┘      └─────────────────────┘
-          │
-          ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    RENDER (Cloud Hosting)                       │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │                    FastAPI Server                         │  │
-│  │                    (bot.py + uvicorn)                     │  │
-│  │                                                           │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐   │  │
-│  │  │  /webhook   │  │  /health    │  │  /docs (Swagger)│   │  │
-│  │  │  (POST)     │  │  (GET)      │  │  (GET)          │   │  │
-│  │  └──────┬──────┘  └─────────────┘  └─────────────────┘   │  │
-│  │         │                                                 │  │
-│  │         ▼                                                 │  │
-│  │  ┌─────────────────────────────────────────────────────┐  │  │
-│  │  │           python-telegram-bot Library               │  │  │
-│  │  │                                                     │  │  │
-│  │  │   • Command Handlers (/start, /help, /clear, etc)   │  │  │
-│  │  │   • Message Handler (regular messages)              │  │  │
-│  │  │   • Personal Mode Logic                             │  │  │
-│  │  └──────────────────────┬──────────────────────────────┘  │  │
-│  │                         │                                 │  │
-│  └─────────────────────────┼─────────────────────────────────┘  │
-│                            │                                    │
-│  ┌─────────────────────────┼─────────────────────────────────┐  │
-│  │                         ▼                                 │  │
-│  │  ┌─────────────────────────────────────────────────────┐  │  │
-│  │  │              Redis Storage (Current) ✅              │  │  │
-│  │  │                                                     │  │  │
-│  │  │   • conversation_history: Redis Lists                │  │  │
-│  │  │   • user_preferences: Redis Hash                     │  │  │
-│  │  │   • message_embeddings: Redis Vector Search          │  │  │
-│  │  │   • semantic_search: RediSearch Index               │  │  │
-│  │  │   • auto-expiration: TTL-based cleanup              │  │  │
-│  │  │   • fallback: In-memory storage                     │  │  │
-│  │  └─────────────────────────────────────────────────────┘  │  │
-│  │                                                           │  │
-│  │  ┌─────────────────────────────────────────────────────┐  │  │
-│  │  │              In-Memory Storage (Legacy)             │  │  │
-│  │  │                                                     │  │  │
-│  │  │   • conversation_history: dict[user_id -> messages] │  │  │
-│  │  │   • user_model_selection: dict[user_id -> model]    │  │  │
-│  │  │   • processed_messages: set (deduplication)         │  │  │
-│  │  │   • Fallback when Redis unavailable                 │  │  │
-│  │  └─────────────────────────────────────────────────────┘  │  │
-│  │                                                           │  │
-│  │  ┌─────────────────────────────────────────────────────┐  │  │
-│  │  │              PostgreSQL (Deprecated)                │  │  │
-│  │  │                                                     │  │  │
-│  │  │   • users table (profiles)                          │  │  │
-│  │  │   • sessions table (summaries)                      │  │  │
-│  │  │   • messages table (history)                        │  │  │
-│  │  │   • Replaced by Redis for performance               │  │  │
-│  │  │   • Service still running for health checks         │  │  │
-│  │  │   • NOT used by current implementation              │  │  │
-│  │  │   • Can be safely deleted or kept for future use    │  │  │
-│  │  └─────────────────────────────────────────────────────┘  │  │
-│  │                                                           │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-          │
-          ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      EXTERNAL APIS                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌───────────────────┐         ┌───────────────────┐           │
-│  │    OpenAI API     │         │  Telegram API     │           │
-│  │                   │         │                   │           │
-│  │  • GPT-4o-mini    │         │  • Send messages  │           │
-│  │  • Chat completions│        │  • Set webhook    │           │
-│  │  • (Embeddings    │         │                   │           │
-│  │     future)       │         │                   │           │
-│  └───────────────────┘         └───────────────────┘           │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+Telegram user
+   ↓
+Telegram API
+   ↓
+FastAPI + python-telegram-bot handlers (`src/bot.py`)
+   ↓
+OpenAI responses / voice / optional explicit web lookup
+   ↓
+PostgreSQL persistence (`src/postgres_db.py`)
+   ↓
+In-memory fallback only if PostgreSQL is unavailable
 ```
 
 ---
 
-## 2️⃣ Message Flow (Step by Step)
+## Active storage path
 
-```
-┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
-│  User    │     │ Telegram │     │ FastAPI  │     │  OpenAI  │     │ Telegram │
-│  Phone   │     │  Server  │     │  Server  │     │   API    │     │  Server  │
-└────┬─────┘     └────┬─────┘     └────┬─────┘     └────┬─────┘     └────┬─────┘
-     │                │                │                │                │
-     │ 1. Send msg    │                │                │                │
-     │ "I feel sad"   │                │                │                │
-     ├───────────────►│                │                │                │
-     │                │                │                │                │
-     │                │ 2. POST        │                │                │
-     │                │ /webhook       │                │                │
-     │                ├───────────────►│                │                │
-     │                │                │                │                │
-     │                │                │ 3. Check       │                │
-     │                │                │ Personal Mode  │                │
-     │                │                │ & Crisis       │                │
-     │                │                │                │                │
-     │                │                │ 4. Build       │                │
-     │                │                │ prompt +       │                │
-     │                │                │ history        │                │
-     │                │                │                │                │
-     │                │                │ 5. POST        │                │
-     │                │                │ /chat/complete │                │
-     │                │                ├───────────────►│                │
-     │                │                │                │                │
-     │                │                │ 6. AI Response │                │
-     │                │                │◄───────────────┤                │
-     │                │                │                │                │
-     │                │                │ 7. Send        │                │
-     │                │                │ message        │                │
-     │                │                ├───────────────────────────────►│
-     │                │                │                │                │
-     │ 8. Receive     │◄───────────────────────────────────────────────┤
-     │ response       │                │                │                │
-     │                │                │                │                │
-```
+- **Primary persistent store:** PostgreSQL
+- **Active implementation:** `src/postgres_db.py`
+- **Configured from:** `NEON_MINDMATE_DB_URL` or `DATABASE_URL`
+- **Fallback mode:** in-memory storage inside `src/postgres_db.py` when PostgreSQL cannot be reached
+- **Not active runtime:** `src/redis_db.py`
+
+### Important truth about retrieval
+
+MindMate currently does **not** perform true vector semantic retrieval in production.
+The `semantic_search(...)` method in `src/postgres_db.py` is currently a **basic keyword search** using `ILIKE` over stored message content.
+
+That means:
+- it can find direct text matches reasonably well
+- it does **not** use embeddings or pgvector in the active path
+- docs should describe it as keyword-based memory search, not semantic memory
 
 ---
 
-## 3️⃣ Personal Mode Decision Tree
+## Startup behavior
 
-```
-                         ┌─────────────────┐
-                         │ Incoming Message│
-                         └────────┬────────┘
-                                  │
-                                  ▼
-                    ┌─────────────────────────────┐
-                    │  Is user_id in              │
-                    │  PERSONAL_MODE_USER_IDS?    │
-                    │  [339651126]                │
-                    └─────────────┬───────────────┘
-                                  │
-                    ┌─────────────┴─────────────┐
-                    │                           │
-                    ▼                           ▼
-              ┌─────────┐                 ┌─────────┐
-              │   YES   │                 │   NO    │
-              └────┬────┘                 └────┬────┘
-                   │                           │
-                   ▼                           ▼
-    ╔══════════════════════════╗  ╔══════════════════════════╗
-    ║     PERSONAL MODE        ║  ║     STANDARD MODE        ║
-    ║                          ║  ║                          ║
-    ║ ✓ User context injected  ║  ║ • Generic wellness bot   ║
-    ║   (name, focus areas)    ║  ║                          ║
-    ║                          ║  ║ • "As an AI, I can't..." ║
-    ║ ✓ No AI disclaimers      ║  ║                          ║
-    ║                          ║  ║ • Suggests professional  ║
-    ║ ✓ Direct, honest advice  ║  ║   help frequently        ║
-    ║                          ║  ║                          ║
-    ║ ✓ Soft crisis handling   ║  ║ • Hard crisis stop       ║
-    ║                          ║  ║                          ║
-    ╚═══════════════╤══════════╝  ╚═══════════════╤══════════╝
-                    │                              │
-                    └──────────────┬───────────────┘
-                                   │
-                                   ▼
-                        ┌─────────────────────┐
-                        │  Generate Response  │
-                        │  with OpenAI        │
-                        └─────────────────────┘
-```
+At startup, `src/bot.py`:
+
+1. loads project-local environment variables
+2. reads `NEON_MINDMATE_DB_URL` or `DATABASE_URL`
+3. tries to connect `PostgresDatabase(...)`
+4. falls back to `InMemoryDatabase()` if the connection fails
+5. starts the Telegram bot in webhook or polling mode
+
+This keeps runtime behavior conservative and resilient without depending on Redis.
 
 ---
 
-## 4️⃣ Crisis Detection Flow
+## Legacy modules retained on purpose
 
-```
-                    ┌─────────────────┐
-                    │ User Message    │
-                    └────────┬────────┘
-                             │
-                             ▼
-                  ┌──────────────────────┐
-                  │  detect_crisis()     │
-                  │                      │
-                  │  Keywords checked:   │
-                  │  • "suicide"         │
-                  │  • "kill myself"     │
-                  │  • "end my life"     │
-                  │  • "self-harm"       │
-                  │  • "want to die"     │
-                  │  • "no reason to     │
-                  │     live"            │
-                  └───────────┬──────────┘
-                              │
-               ┌──────────────┴──────────────┐
-               │                             │
-               ▼                             ▼
-     ┌─────────────────┐           ┌─────────────────┐
-     │ 🚨 CRISIS       │           │ ✓ NO CRISIS     │
-     │    DETECTED     │           │                 │
-     └────────┬────────┘           └────────┬────────┘
-              │                             │
-              ▼                             │
-   ┌─────────────────────┐                  │
-   │ Is Personal Mode?   │                  │
-   └──────────┬──────────┘                  │
-              │                             │
-    ┌─────────┴─────────┐                   │
-    ▼                   ▼                   │
-┌────────┐        ┌────────┐                │
-│PERSONAL│        │STANDARD│                │
-└───┬────┘        └───┬────┘                │
-    │                 │                     │
-    ▼                 ▼                     │
-┌─────────────┐ ┌─────────────┐             │
-│Show SADAG   │ │Show SADAG   │             │
-│resources    │ │resources    │             │
-│             │ │             │             │
-│ CONTINUE ✓  │ │ STOP ✗      │             │
-│conversation │ │(return)     │             │
-└─────────────┘ └─────────────┘             │
-    │                                       │
-    └───────────────────┬───────────────────┘
-                        │
-                        ▼
-                ┌───────────────┐
-                │ Continue to   │
-                │ OpenAI        │
-                └───────────────┘
-```
+### `src/redis_db.py`
+Retained as a **legacy/deprecated implementation reference** only.
+It is not the current primary store and should not be described as production-active.
+
+### `src/storage/postgres.py`
+Retained as a **legacy/experimental duplicate helper**.
+It is not wired into the current runtime path; `src/postgres_db.py` is the authoritative implementation.
 
 ---
 
-## 5️⃣ Future: With PostgreSQL
+## Deployment truth
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│                    ENHANCED FLOW                               │
-└────────────────────────────────────────────────────────────────┘
-
-     ┌─────────────────┐
-     │ User Message    │
-     │ "I'm stressed"  │
-     └────────┬────────┘
-              │
-              ▼
-   ┌─────────────────────┐      ┌─────────────────────────────┐
-   │ 1. Load User Profile│◄────►│        PostgreSQL           │
-   │                     │      │                             │
-   │ Name: DJ Papzin     │      │  ┌───────────────────────┐  │
-   │ Focus: Relationships│      │  │ users                 │  │
-   │        Finances     │      │  │ • telegram_id         │  │
-   │        Bipolar      │      │  │ • name                │  │
-   └──────────┬──────────┘      │  │ • focus_areas         │  │
-              │                 │  │ • preferences         │  │
-              ▼                 │  └───────────────────────┘  │
-   ┌─────────────────────┐      │                             │
-   │ 2. Load Last 3      │      │  ┌───────────────────────┐  │
-   │    Session Summaries│◄────►│  │ sessions              │  │
-   │                     │      │  │ • user_id             │  │
-   │ • "Discussed work"  │      │  │ • summary             │  │
-   │ • "Relationship     │      │  │ • mood                │  │
-   │    concerns"        │      │  │ • created_at          │  │
-   └──────────┬──────────┘      │  └───────────────────────┘  │
-              │                 │                             │
-              ▼                 └─────────────────────────────┘
-   ┌─────────────────────┐
-   │ 3. Build Rich       │
-   │    Context Prompt   │
-   │                     │
-   │ "You're talking to  │
-   │  DJ Papzin. Last    │
-   │  session he         │
-   │  mentioned work     │
-   │  stress. His focus  │
-   │  areas are..."      │
-   └──────────┬──────────┘
-              │
-              ▼
-   ┌─────────────────────┐
-   │ 4. OpenAI Response  │
-   │                     │
-   │ "I remember you     │
-   │  mentioned work     │
-   │  stress last time.  │
-   │  How's that going?" │
-   └─────────────────────┘
-```
+- Render runs the Python worker process
+- Persistent storage should come from PostgreSQL environment configuration
+- Redis provisioning is no longer required for the active runtime path
 
 ---
 
-## 6️⃣ Deployment Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                       GITHUB REPOSITORY                         │
-│                    github.com/djpapzin/mindmate                 │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │
-              ┌─────────────────┴─────────────────┐
-              │                                   │
-              ▼                                   ▼
-    ┌─────────────────┐                 ┌─────────────────┐
-    │  main branch    │                 │ feature/* branch│
-    │  (production)   │                 │ (development)   │
-    └────────┬────────┘                 └────────┬────────┘
-             │                                   │
-             │ auto-deploy                       │ auto-deploy
-             │                                   │
-             ▼                                   ▼
-    ┌─────────────────┐                 ┌─────────────────┐
-    │ Render Service  │                 │ Render Service  │
-    │ "mindmate"      │                 │ "mindmate-dev"  │
-    └────────┬────────┘                 └────────┬────────┘
-             │                                   │
-             ▼                                   ▼
-    ┌─────────────────┐                 ┌─────────────────┐
-    │ Production Bot  │                 │ Development Bot │
-    │                 │                 │                 │
-    │ @mywellness     │                 │ @mindmate_dev   │
-    │ companion_bot   │                 │ _bot            │
-    └─────────────────┘                 └─────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                      UPTIME MONITORING                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│    UptimeRobot                                                  │
-│    • Pings /health every 5 minutes                              │
-│    • Prevents Render free tier sleep                            │
-│    • Alerts on downtime                                         │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 7️⃣ File Structure
-
-```
-mindmate/
-│
-├── bot.py                    # 🤖 Main application
-│   │
-│   ├── Configuration         # Env vars, constants
-│   ├── Personal Mode Config  # User IDs, custom prompts
-│   ├── Crisis Detection      # Keywords, responses
-│   ├── FastAPI App           # /webhook, /health endpoints
-│   ├── Command Handlers      # /start, /help, /clear, etc.
-│   ├── Message Handler       # Main conversation logic
-│   └── Main Entry Point      # uvicorn.run()
-│
-├── requirements.txt          # 📦 Dependencies
-│   ├── python-telegram-bot
-│   ├── openai
-│   ├── fastapi
-│   └── uvicorn
-│
-├── .env.example              # 🔐 Environment template
-├── .gitignore                # 🚫 Ignored files
-│
-├── README.md                 # 📖 User documentation
-├── ROADMAP.md                # 🗺️ Feature planning
-│
-├── docs/
-│   └── ARCHITECTURE.md       # 🏗️ This file!
-│
-└── research/
-    ├── run_blind_test.py     # 🧪 A/B testing automation
-    └── calculate_results.py  # 📊 Results analysis
-```
-
----
-
-## 8️⃣ Tech Stack Summary
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         TECH STACK                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  BACKEND                        STORAGE                         │
-│  ────────                       ────────                         │
-│  • Python 3.13                  • Redis (vector + memory)        │
-│  • FastAPI                      • Sentence Transformers         │
-│  • Uvicorn (ASGI)               • Auto-expiration (TTL)          │
-│  • python-telegram-bot                                          │
-│                                                                 │
-│  EXTERNAL SERVICES              DEPRECATED                      │
-│  ─────────────────               ──────────                     │
-│  • OpenAI GPT-4o-mini            • PostgreSQL (unused)           │
-│  • Telegram Bot API              • pgvector (not needed)         │
-│  • Render (hosting)              • In-memory dicts               │
-│  • UptimeRobot (monitoring)                                      │
-│                                                                 │
-│  DEVELOPMENT                                                     │
-│  ───────────                                                     │
-│  • GitHub (repo)                 • Feature branches              │
-│  • Auto-deploy                   • Twilio (WhatsApp - future)    │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-**Last Updated:** February 2026
+**Last Updated:** 2026-03-22

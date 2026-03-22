@@ -20,12 +20,12 @@
 |---------|-------------|
 | 💬 **Empathetic Chat** | AI-powered conversations with emotional intelligence |
 | 🚨 **Crisis Detection** | Automatic detection with SA helpline resources (SADAG) |
-| 📝 **Persistent Memory** | Redis-powered cross-session conversation history |
-| 🔍 **Semantic Search** | Vector-based memory retrieval using OpenAI embeddings |
+| 📝 **Persistent Memory** | PostgreSQL-powered cross-session conversation history |
+| 🔍 **Memory Search** | PostgreSQL keyword search over stored conversation text (not true vector semantic retrieval yet) |
 | 🔓 **Personal Mode** | Premium experience with direct advice (no disclaimers) |
 | �️ **Voice Messages** | Send voice notes → bot responds with voice ✅ **COMPLETED** |
 | ⚡ **FastAPI Backend** | Modern async architecture with webhooks |
-| 🛡️ **Graceful Fallback** | In-memory storage if Redis unavailable |
+| 🛡️ **Graceful Fallback** | In-memory storage if PostgreSQL unavailable, with a user-facing lighter-memory notice |
 
 ### Commands
 | Command | Description |
@@ -72,16 +72,15 @@ A private, unfiltered AI therapist experience for authorized users.
 | **Bot Library** | python-telegram-bot 21.0 |
 | **AI** | OpenAI GPT-4o-mini |
 | **Voice** | Smart Caption Handling (gpt-4o-mini-transcribe + gpt-4o-mini-tts) |
-| **Embeddings** | OpenAI text-embedding-3-small (vector search) |
 | **Hosting** | Render (free tier) |
-| **Database** | Redis (persistent storage) |
+| **Database** | PostgreSQL (Neon, persistent storage) |
 | **Uptime** | UptimeRobot |
 
 ### Architecture
 ```
 Telegram → Webhook → FastAPI → OpenAI → Response
                  ↓
-            /webhook endpoint (async)
+      PostgreSQL persistence (+ in-memory fallback)
 ```
 
 ---
@@ -110,6 +109,7 @@ Telegram → Webhook → FastAPI → OpenAI → Response
    |----------|-------------|
    | `TELEGRAM_BOT_TOKEN` | From [@BotFather](https://t.me/botfather) |
    | `OPENAI_API_KEY` | From [OpenAI](https://platform.openai.com/api-keys) |
+   | `DATABASE_URL` or `NEON_MINDMATE_DB_URL` | PostgreSQL connection string (primary storage) |
    | `RENDER_EXTERNAL_URL` | Your Render URL (enables webhooks) |
 
 6. Deploy!
@@ -140,8 +140,12 @@ python bot.py
 ```env
 TELEGRAM_BOT_TOKEN=your_token_here
 OPENAI_API_KEY=your_key_here
+DATABASE_URL=postgresql://user:password@host:5432/database
+# or: NEON_MINDMATE_DB_URL=postgresql://user:password@host:5432/database
 RENDER_EXTERNAL_URL=https://your-app.onrender.com  # Optional: enables webhooks
 ```
+
+> Note: the current storage implementation uses PostgreSQL for persistence and falls back to in-memory storage if the database is unavailable. Redis is retained only as legacy migration/reference material.
 
 ### Daily direct check-ins at 07:00 SAST
 MindMate's built-in daily heartbeat scheduler sends by **direct message** unless you explicitly set a group chat/topic target.
@@ -189,13 +193,13 @@ MindMate detects crisis keywords and provides immediate resources:
 
 ## 📋 Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for detailed plans:
+See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed plans:
 
 - [x] Personal Mode
 - [x] FastAPI Migration
 - [x] Webhook Support
 - [x] A/B Testing Tools
-- [ ] Persistent Memory (PostgreSQL)
+- [x] Persistent Memory (PostgreSQL)
 - [ ] WhatsApp Integration (Twilio)
 - [ ] Voice Messages
 - [ ] Daily Check-ins

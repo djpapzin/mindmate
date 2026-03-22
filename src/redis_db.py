@@ -1,6 +1,12 @@
 """
-Redis Database Module for MindMate Bot
-Handles persistent storage with fallback for vector search
+Legacy Redis storage module for MindMate.
+
+This file is kept only as a historical/backup implementation reference.
+The active runtime storage path is PostgreSQL via `src/postgres_db.py`,
+with in-memory fallback when PostgreSQL is unavailable.
+
+Do not treat Redis as the primary production datastore unless a future
+migration explicitly re-activates it.
 """
 
 import json
@@ -24,7 +30,7 @@ class Message:
     message_id: str
 
 class RedisDatabase:
-    """Redis database manager with basic storage capabilities"""
+    """Legacy Redis database manager retained for reference and migration work."""
     
     def __init__(self, redis_url: str, openai_client=None):
         self.redis_url = redis_url
@@ -508,7 +514,7 @@ class InMemoryFallback:
 
 # Database manager with fallback
 class DatabaseManager:
-    """Main database manager with Redis + fallback"""
+    """Legacy Redis-oriented manager retained for backwards reference only."""
     
     def __init__(self, redis_url: str, openai_client=None):
         self.redis_db = RedisDatabase(redis_url, openai_client)
