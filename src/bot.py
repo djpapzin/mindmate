@@ -4,14 +4,17 @@ A compassionate chatbot providing 24/7 mental wellness support.
 """
 
 import asyncio
+import html
 import json
 import logging
 import os
+import re
 import tempfile
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -21,7 +24,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import uvicorn
 
 # Brave web search helper (optional, opt-in via explicit trigger)
-from web_search import search_web
+from web_search import build_web_attribution_line, search_web
 
 # Import database module - PostgreSQL preferred, fallback to Redis, then memory
 from postgres_db import PostgresDatabase, Message
@@ -51,16 +54,35 @@ def escape_markdown_v2(text: str) -> str:
         text = text.replace(char, f'\\{char}')
     return text
 
-def send_markdown_message(update: Update, text: str) -> None:
-    """Send a message with markdown formatting, handling special characters."""
-    # For now, use HTML parsing which is more forgiving than MarkdownV2
-    # Convert common markdown to HTML equivalents
-    html_text = (
-        text.replace('**', '<b>').replace('**', '</b>')
-             .replace('*', '<i>').replace('*', '</i>')
-             .replace('`', '<code>').replace('`', '</code>')
-    )
-    return update.message.reply_text(html_text, parse_mode='HTML')
+
+def _render_basic_telegram_html(text: str) -> str:
+    """Render the small markdown subset used by MindMate into safe Telegram HTML."""
+    escaped = html.escape(text)
+
+    # Handle the formatting we actually use in bot copy.
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped, flags=re.DOTALL)
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"\*(?!\*)([^*\n]+?)\*(?!\*)", r"<i>\1</i>", escaped)
+
+    return escaped
+
+
+def _parse_optional_int_env(name: str) -> int | None:
+    """Parse an optional integer environment variable, logging and ignoring invalid values."""
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return None
+    try:
+        return int(raw_value)
+    except ValueError:
+        logging.getLogger(__name__).warning("Invalid %s=%r; ignoring", name, raw_value)
+        return None
+
+
+async def send_markdown_message(update: Update, text: str):
+    """Send a message using Telegram HTML after safely rendering simple markdown."""
+    html_text = _render_basic_telegram_html(text)
+    return await update.message.reply_text(html_text, parse_mode='HTML')
 
 # =============================================================================
 # Configuration
@@ -77,6 +99,19 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 PORT = int(os.getenv("PORT", 10000))
 MAX_HISTORY_LENGTH = 10
+AUTO_WEB_SEARCH_ENABLED = os.getenv("AUTO_WEB_SEARCH_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+DAILY_HEARTBEAT_ENABLED = os.getenv("DAILY_HEARTBEAT_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+DAILY_HEARTBEAT_HOUR = int(os.getenv("DAILY_HEARTBEAT_HOUR", "9"))
+DAILY_HEARTBEAT_WINDOW_MINUTES = max(1, int(os.getenv("DAILY_HEARTBEAT_WINDOW_MINUTES", "15")))
+DAILY_HEARTBEAT_POLL_SECONDS = max(30, int(os.getenv("DAILY_HEARTBEAT_POLL_SECONDS", "60")))
+DAILY_HEARTBEAT_TIMEZONE = os.getenv("DAILY_HEARTBEAT_TIMEZONE", "UTC").strip() or "UTC"
+DAILY_HEARTBEAT_CHAT_ID = _parse_optional_int_env("DAILY_HEARTBEAT_CHAT_ID")
+DAILY_HEARTBEAT_MESSAGE_THREAD_ID = _parse_optional_int_env("DAILY_HEARTBEAT_MESSAGE_THREAD_ID")
+DAILY_HEARTBEAT_ALLOWED_USER_IDS = {
+    int(token.strip())
+    for token in os.getenv("DAILY_HEARTBEAT_ALLOWED_USER_IDS", "").split(",")
+    if token.strip().isdigit()
+}
 
 # Webhook configuration
 # Set RENDER_EXTERNAL_URL in Render environment, or it will use polling as fallback
@@ -151,6 +186,8 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -165,7 +202,11 @@ SYSTEM_PROMPT = """You are MindMate, an AI mental wellness companion. You provid
 - Help planning small, manageable next steps
 
 You are NOT a therapist, doctor, or emergency service. Never diagnose or provide medical advice.
-Be concise, warm, and non-judgmental. Use emojis sparingly."""
+Be concise, warm, and non-judgmental. Use emojis sparingly.
+
+When the user asks for current, changing, or location-specific factual information relevant to health or practical support — for example current medical guidance, live public-health/news updates, or nearby services/resources — prefer fresh web context when it is available.
+For emotional support, journaling, reflection, relationship processing, or everyday coping conversations, do not force web lookup behaviour; stay present and conversational instead.
+If live web context is not available for a time-sensitive claim, be honest about uncertainty and avoid pretending the information is current."""
 
 # Personal Mode system prompt (no guardrails, direct advice)
 PERSONAL_MODE_PROMPT = """You are my personal AI therapist and trusted confidant. Your name is MindMate.
@@ -207,7 +248,11 @@ You are a warm, wise, and direct advisor - like a combination of a best friend a
 - Only mention crisis resources if I express genuine danger to myself or others
 - Be my advocate and support, not a liability-avoiding chatbot
 
-Remember: I chose you as my personal therapist. Be that for me."""
+Remember: I chose you as my personal therapist. Be that for me.
+
+If I ask for current, changing, or location-specific factual info tied to health, treatment resources, public-health developments, or nearby services, prefer fresh web context when it is available.
+But do not overuse web lookup for emotional support, journaling, relationship processing, or normal reflective conversation. In those moments, stay grounded in the conversation unless live facts are actually needed.
+If current web context is unavailable, say so plainly instead of acting more certain than you are."""
 
 # Dynamic Personal Mode prompt that includes user-specific context
 def get_personal_mode_prompt(user_id: int) -> str:
@@ -253,7 +298,11 @@ Say: "Have you tried going for a walk when you're feeling down? Even 10 minutes 
 Instead of: "I understand you're experiencing anxiety. Consider these coping mechanisms:\n• Deep breathing\n• Progressive muscle relaxation"
 Say: "When you start feeling that anxiety build up, try taking a few slow breaths. What usually helps you calm down?"
 
-Remember: The user chose you as their personal therapist. Be that for them."""
+Remember: The user chose you as their personal therapist. Be that for them.
+
+If the user asks for current, changing, or location-specific factual information related to health, treatment resources, public-health updates, or nearby services, prefer fresh web context when it is available.
+Do not turn emotional support, journaling, or reflective chat into unnecessary web lookups.
+If live web context is unavailable for something time-sensitive, be transparent about that uncertainty instead of implying the information is current."""
     
     user_context = get_user_context(user_id)
     if user_context:
@@ -309,6 +358,11 @@ HELP_MESSAGE = """**How I can support you:**
 /journey - Show your journey tracking and what I've learned about you
 /journal - Daily journaling and mood tracking
 /schedule - Set up automated daily journaling reminders
+/feedback - Share a quick note about what helped or felt off
+
+**Live web lookup (explicit only):**
+Use `web: your question here`
+Example: `web: latest bipolar treatment guidelines`
 
 Remember: I'm here to support, not replace professional help. 💙"""
 
@@ -324,6 +378,7 @@ conversation_history: dict[int, list[dict[str, str]]] = {}
 user_model_selection: dict[int, str] = {}  # Track model per user for A/B testing
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 bot_running = False
+degraded_mode_notice_sent: set[int] = set()
 
 # Message deduplication to prevent double responses during deployments
 processed_messages: set[int] = set()
@@ -372,17 +427,439 @@ def set_user_model(user_id: int, model: str) -> None:
     user_model_selection[user_id] = model
 
 
+def build_chat_recovery_message(error: Exception, used_web: bool = False) -> str:
+    """Return a user-friendly fallback message for chat model failures."""
+    status_code = getattr(error, "status_code", None)
+    error_name = error.__class__.__name__.lower()
+
+    if status_code == 429 or "ratelimit" in error_name or "rate_limit" in error_name:
+        message = (
+            "💙 I'm getting more requests than usual right now, so my reply engine needs a moment. "
+            "Please try again in about a minute."
+        )
+    elif status_code and status_code >= 500:
+        message = (
+            "💙 My reply engine hit a temporary server problem just now. "
+            "Please try again in a moment."
+        )
+    elif "timeout" in error_name:
+        message = (
+            "💙 My reply took too long to come back just now. "
+            "Please try again, or send the key part in a shorter message."
+        )
+    elif "connection" in error_name or "apierror" in error_name:
+        message = (
+            "💙 I lost connection to my reply engine for a moment. "
+            "Please try again shortly."
+        )
+    else:
+        message = (
+            "💙 I hit a temporary problem while preparing that reply. "
+            "Please try again."
+        )
+
+    if used_web:
+        message += " If needed, resend it without `web:` and I'll answer without live web lookup."
+    else:
+        message += " If it keeps happening, resend the main part in one shorter message."
+
+    message += " You can also use /feedback to flag it for review."
+    return message
+
+
+def is_degraded_memory_mode() -> bool:
+    """Return True when the bot is using non-persistent fallback storage."""
+    return isinstance(db_manager, PostgresInMemoryDatabase)
+
+
+async def maybe_send_degraded_mode_notice(update: Update, user_id: int) -> None:
+    """Let the user know when long-term memory is temporarily degraded."""
+    if user_id in degraded_mode_notice_sent or not is_degraded_memory_mode() or not update.message:
+        return
+
+    degraded_mode_notice_sent.add(user_id)
+    await update.message.reply_text(
+        "🟡 Quick heads-up: I'm still here for the conversation, but my long-term memory is in a lighter mode right now.\n\n"
+        "I may not reliably remember this chat after a restart, so repeat anything important later or use /feedback if you want to flag something for review."
+    )
+
+
+def get_daily_heartbeat_timezone() -> ZoneInfo:
+    """Return the configured timezone for scheduled daily check-ins."""
+    try:
+        return ZoneInfo(DAILY_HEARTBEAT_TIMEZONE)
+    except Exception:
+        logger.warning("Invalid DAILY_HEARTBEAT_TIMEZONE=%s; falling back to UTC", DAILY_HEARTBEAT_TIMEZONE)
+        return ZoneInfo("UTC")
+
+
+async def is_daily_heartbeat_enabled_for_user(user_id: int) -> bool:
+    """Return True when a user is eligible and has not opted out of the daily heartbeat."""
+    rollout_allows_user = (
+        user_id in PERSONAL_MODE_USERS
+        and (not DAILY_HEARTBEAT_ALLOWED_USER_IDS or user_id in DAILY_HEARTBEAT_ALLOWED_USER_IDS)
+    )
+    if not rollout_allows_user:
+        return False
+    if not db_manager or not hasattr(db_manager, "get_user_preference"):
+        return False
+    enabled = await db_manager.get_user_preference(user_id, "daily_heartbeat_enabled")
+    if enabled is None:
+        return True
+    return bool(enabled)
+
+
+async def set_daily_heartbeat_enabled_for_user(user_id: int, enabled: bool) -> None:
+    """Persist the user's daily heartbeat opt-in state."""
+    if db_manager and hasattr(db_manager, "store_user_preference"):
+        await db_manager.store_user_preference(user_id, "daily_heartbeat_enabled", enabled)
+
+
+def can_force_test_daily_heartbeat(user_id: int) -> bool:
+    """Return True when this user may manually trigger a live heartbeat test."""
+    return (
+        DAILY_HEARTBEAT_ENABLED
+        and user_id in PERSONAL_MODE_USERS
+        and user_id in DAILY_HEARTBEAT_ALLOWED_USER_IDS
+    )
+
+
+async def get_daily_heartbeat_last_sent_date(user_id: int) -> str | None:
+    """Return the last local-date string this user received a scheduled check-in."""
+    if not db_manager or not hasattr(db_manager, "get_user_preference"):
+        return None
+    value = await db_manager.get_user_preference(user_id, "daily_heartbeat_last_sent_date")
+    return value if isinstance(value, str) else None
+
+
+async def mark_daily_heartbeat_sent(user_id: int, local_date: str) -> None:
+    """Persist the local date when the scheduled check-in was sent."""
+    if db_manager and hasattr(db_manager, "store_user_preference"):
+        await db_manager.store_user_preference(user_id, "daily_heartbeat_last_sent_date", local_date)
+
+
+async def get_daily_heartbeat_candidate_user_ids() -> list[int]:
+    """Return eligible known users unless they have explicitly opted out."""
+    if not DAILY_HEARTBEAT_ENABLED or not db_manager or not hasattr(db_manager, "get_known_user_ids"):
+        return []
+
+    candidate_user_ids = await db_manager.get_known_user_ids()
+    eligible_user_ids: list[int] = []
+    for user_id in candidate_user_ids:
+        if await is_daily_heartbeat_enabled_for_user(user_id):
+            eligible_user_ids.append(user_id)
+    return eligible_user_ids
+
+
+HEARTBEAT_SUPPORT_KEYWORDS = {
+    "anxious", "anxiety", "burnout", "calm", "coping", "crash", "crying", "depressed", "depression",
+    "drained", "emotion", "emotional", "energy", "episode", "exhausted", "family", "fatigue",
+    "feel", "feeling", "feelings", "friend", "grief", "journal", "lonely", "manic", "medication",
+    "medicine", "meds", "mood", "overwhelmed", "panic", "partner", "relationship", "rest", "sad",
+    "sleep", "stressed", "stress", "support", "therapy", "therapist", "tired", "trigger", "work"
+}
+HEARTBEAT_HIGH_PRIORITY_KEYWORDS = {
+    "journal", "journaling", "mood", "stress", "stressed", "sleep", "tired", "rest", "overwhelmed",
+    "anxious", "anxiety", "panic", "depressed", "depression", "manic", "episode", "therapy",
+    "therapist", "meds", "medication", "medicine", "relationship", "partner", "family", "friend",
+    "lonely", "grief", "crying", "support", "coping", "trigger"
+}
+HEARTBEAT_CURRENT_EVENTS_PATTERNS = (
+    re.compile(r"\b(?:news|current events?|headlines?|latest|update|updates|happening|happened)\b", re.IGNORECASE),
+    re.compile(r"\bwhat(?:'s| is)?\s+(?:exactly\s+)?(?:happening|going on|the update)\b", re.IGNORECASE),
+    re.compile(r"\b(?:there|in [a-z][a-z\s'-]{1,40})\s+(?:lately|right now|today|this week)\b", re.IGNORECASE),
+)
+HEARTBEAT_LOW_VALUE_PATTERNS = (
+    re.compile(r"^/[a-z0-9_]+(?:\s|$)", re.IGNORECASE),
+    re.compile(r"\b(?:search|look up|lookup|google|find)\b.{0,30}\b(?:price|weather|news|score|stock|bitcoin|btc|crypto)\b", re.IGNORECASE),
+    re.compile(r"\b(?:bitcoin|btc|crypto|stock|forex|weather|news|score)s?\b", re.IGNORECASE),
+    re.compile(r"https?://", re.IGNORECASE),
+)
+HEARTBEAT_COMMAND_TERMS = {
+    "search", "google", "lookup", "look", "price", "prices", "weather", "news", "score", "scores",
+    "bitcoin", "btc", "crypto", "stock", "stocks", "forex", "translate", "summarize"
+}
+
+
+def _normalize_heartbeat_context_text(value: str) -> str:
+    return " ".join((value or "").split()).strip()
+
+
+def _is_current_events_heartbeat_message(message: str) -> bool:
+    normalized = _normalize_heartbeat_context_text(message)
+    if not normalized:
+        return False
+
+    lower = normalized.lower()
+    if any(pattern.search(lower) for pattern in HEARTBEAT_CURRENT_EVENTS_PATTERNS):
+        return True
+
+    tokens = set(re.findall(r"[a-z']+", lower))
+    return bool({"news", "headline", "headlines", "update", "updates", "latest", "happening", "happened"} & tokens)
+
+
+
+def _is_low_value_heartbeat_message(message: str) -> bool:
+    normalized = _normalize_heartbeat_context_text(message)
+    if not normalized:
+        return True
+    lower = normalized.lower()
+    if len(lower) < 8:
+        return True
+    if any(pattern.search(lower) for pattern in HEARTBEAT_LOW_VALUE_PATTERNS):
+        return True
+    tokens = re.findall(r"[a-z']+", lower)
+    if tokens and len(tokens) <= 6 and sum(token in HEARTBEAT_COMMAND_TERMS for token in tokens) >= max(2, len(tokens) // 2):
+        return True
+    return False
+
+
+
+def _score_heartbeat_context_message(message: str) -> int:
+    normalized = _normalize_heartbeat_context_text(message)
+    if not normalized:
+        return -100
+
+    lower = normalized.lower()
+    tokens = set(re.findall(r"[a-z']+", lower))
+    score = 0
+
+    if _is_low_value_heartbeat_message(normalized):
+        score -= 6
+
+    if _is_current_events_heartbeat_message(normalized):
+        score -= 8
+
+    support_hits = sum(token in HEARTBEAT_SUPPORT_KEYWORDS for token in tokens)
+    score += min(6, support_hits * 2)
+
+    priority_hits = sum(token in HEARTBEAT_HIGH_PRIORITY_KEYWORDS for token in tokens)
+    score += min(8, priority_hits * 2)
+
+    if any(phrase in lower for phrase in ("i feel", "i'm feeling", "ive been", "i've been", "yesterday", "recently")):
+        score += 2
+    if any(phrase in lower for phrase in ("my mood", "my sleep", "my therapist", "my meds", "my medication", "my partner", "my relationship", "my journal")):
+        score += 3
+    if len(tokens) >= 8:
+        score += 1
+    if any(token in tokens for token in {"bipolar", "therapy", "therapist", "meds", "medication", "anxiety", "depressed", "overwhelmed", "panic", "sleep", "relationship", "partner"}):
+        score += 2
+
+    return score
+
+
+
+def _select_heartbeat_context_messages(messages: list[str], limit: int = 3) -> list[str]:
+    support_candidates: list[tuple[int, int, str]] = []
+    general_candidates: list[tuple[int, int, str]] = []
+    fallback_messages: list[str] = []
+    current_event_fallback_messages: list[str] = []
+
+    for index, raw_message in enumerate(messages):
+        normalized = _normalize_heartbeat_context_text(raw_message)
+        if not normalized:
+            continue
+
+        score = _score_heartbeat_context_message(normalized)
+        is_current_events = _is_current_events_heartbeat_message(normalized)
+        has_high_priority_support = any(
+            token in HEARTBEAT_HIGH_PRIORITY_KEYWORDS for token in re.findall(r"[a-z']+", normalized.lower())
+        )
+
+        if score > 0:
+            if has_high_priority_support and not is_current_events:
+                support_candidates.append((score, index, normalized))
+            elif not is_current_events:
+                general_candidates.append((score, index, normalized))
+            else:
+                current_event_fallback_messages.append(normalized)
+        elif not _is_low_value_heartbeat_message(normalized):
+            if is_current_events:
+                current_event_fallback_messages.append(normalized)
+            else:
+                fallback_messages.append(normalized)
+
+    def _dedupe_ranked(items: list[tuple[int, int, str]]) -> list[str]:
+        ranked = sorted(items, key=lambda item: (item[0], item[1]), reverse=True)
+        selected: list[str] = []
+        seen: set[str] = set()
+        for _, _, message in ranked:
+            if message in seen:
+                continue
+            seen.add(message)
+            selected.append(message)
+            if len(selected) >= limit:
+                break
+        return selected
+
+    if support_candidates:
+        return _dedupe_ranked(support_candidates)
+
+    if general_candidates:
+        return _dedupe_ranked(general_candidates)
+
+    deduped_fallback: list[str] = []
+    seen_fallback: set[str] = set()
+    for message in reversed(fallback_messages):
+        if message in seen_fallback:
+            continue
+        seen_fallback.add(message)
+        deduped_fallback.append(message)
+        if len(deduped_fallback) >= limit:
+            break
+
+    if deduped_fallback:
+        return deduped_fallback
+
+    deduped_current_events: list[str] = []
+    seen_current_events: set[str] = set()
+    for message in reversed(current_event_fallback_messages):
+        if message in seen_current_events:
+            continue
+        seen_current_events.add(message)
+        deduped_current_events.append(message)
+        if len(deduped_current_events) >= limit:
+            break
+    return deduped_current_events
+
+
+async def build_daily_heartbeat_message(user_id: int, now: datetime | None = None) -> str:
+    """Build a lightweight morning companion briefing from recent context."""
+    tz = get_daily_heartbeat_timezone()
+    local_now = now.astimezone(tz) if now else datetime.now(tz)
+    yesterday = (local_now - timedelta(days=1)).strftime("%Y-%m-%d")
+    recent_history = await get_history(user_id)
+    journal_entries = daily_journals.get(user_id, {}).get(yesterday, [])
+    journey = user_journey.get(user_id, {})
+
+    intro = "🌤️ Good morning. Here's a gentle check-in for today."
+
+    yesterday_line = None
+    if journal_entries:
+        latest_entry = (journal_entries[-1].get("entry") or "").strip()
+        if latest_entry:
+            compact_entry = " ".join(latest_entry.split())
+            if len(compact_entry) > 180:
+                compact_entry = compact_entry[:177].rstrip() + "..."
+            yesterday_line = f"🪞 Yesterday, you mentioned: \"{compact_entry}\""
+
+    recent_user_messages = [
+        (item.get("content") or "").strip()
+        for item in recent_history
+        if item.get("role") == "user" and (item.get("content") or "").strip()
+    ]
+    relevant_user_messages = _select_heartbeat_context_messages(recent_user_messages, limit=3)
+
+    if not yesterday_line and relevant_user_messages:
+        last_user_message = relevant_user_messages[0]
+        if len(last_user_message) > 180:
+            last_user_message = last_user_message[:177].rstrip() + "..."
+        yesterday_line = f"🪞 Recently, you've been carrying this: \"{last_user_message}\""
+
+    plan_suggestions: list[str] = []
+    combined_context = " ".join(
+        [
+            " ".join((entry.get("entry") or "") for entry in journal_entries),
+            " ".join(relevant_user_messages),
+            " ".join(str(value) for value in journey.values() if isinstance(value, str)),
+        ]
+    ).lower()
+
+    if any(token in combined_context for token in ["tired", "sleep", "exhausted", "rest"]):
+        plan_suggestions.append("protect your energy early today and keep your first task light")
+    if any(token in combined_context for token in ["anxious", "stress", "overwhelmed", "panic"]):
+        plan_suggestions.append("keep today small: one clear priority, slower breathing, fewer tabs open")
+    if any(token in combined_context for token in ["work", "job", "career", "boss", "deadline"]):
+        plan_suggestions.append("pick the single work task that would make today feel less heavy")
+    if any(token in combined_context for token in ["medication", "medicine", "meds", "dose"]):
+        plan_suggestions.append("stay steady with the basics that support you, including your normal meds routine if that's part of your day")
+    if any(token in combined_context for token in ["relationship", "partner", "friend", "family", "mom", "dad"]):
+        plan_suggestions.append("aim for one calm, honest check-in instead of carrying everything silently")
+
+    if not plan_suggestions:
+        plan_suggestions.extend([
+            "choose one thing to protect your peace this morning",
+            "pick one realistic win for today instead of chasing ten things at once",
+        ])
+
+    suggestions_text = "; then maybe " .join(plan_suggestions[:2])
+    plan_line = f"🎯 For today: {suggestions_text}."
+    reply_line = "💬 Reply with how you're feeling this morning, what yesterday was like, or one thing you want help with today."
+
+    lines = [intro]
+    if yesterday_line:
+        lines.append(yesterday_line)
+    lines.append(plan_line)
+    lines.append(reply_line)
+    return "\n\n".join(lines)
+
+
+async def run_daily_heartbeat_cycle(now: datetime | None = None) -> int:
+    """Send one scheduled daily check-in per eligible user per local day."""
+    if DAILY_HEARTBEAT_MESSAGE_THREAD_ID is not None and DAILY_HEARTBEAT_CHAT_ID is None:
+        logger.warning(
+            "DAILY_HEARTBEAT_MESSAGE_THREAD_ID is set without DAILY_HEARTBEAT_CHAT_ID; falling back to DM delivery"
+        )
+
+    if not DAILY_HEARTBEAT_ENABLED or not telegram_app or not telegram_app.bot:
+        return 0
+
+    tz = get_daily_heartbeat_timezone()
+    local_now = now.astimezone(tz) if now else datetime.now(tz)
+    if local_now.hour != DAILY_HEARTBEAT_HOUR or local_now.minute >= DAILY_HEARTBEAT_WINDOW_MINUTES:
+        return 0
+
+    sent_count = 0
+    local_date = local_now.strftime("%Y-%m-%d")
+    for user_id in await get_daily_heartbeat_candidate_user_ids():
+        if daily_summary_tracking.get(user_id, {}).get("waiting_for_summary"):
+            continue
+        if await get_daily_heartbeat_last_sent_date(user_id) == local_date:
+            continue
+        try:
+            await send_scheduled_daily_summary(user_id)
+            if daily_summary_tracking.get(user_id, {}).get("waiting_for_summary"):
+                await mark_daily_heartbeat_sent(user_id, local_date)
+                sent_count += 1
+        except Exception as e:
+            logger.error("Daily heartbeat send failed for user %s: %s", user_id, e)
+    return sent_count
+
+
+async def daily_heartbeat_scheduler_loop() -> None:
+    """Background scheduler for the once-daily MindMate heartbeat MVP."""
+    logger.info(
+        "Daily heartbeat scheduler active: enabled=%s hour=%s tz=%s window=%sm allowlist=%s",
+        DAILY_HEARTBEAT_ENABLED,
+        DAILY_HEARTBEAT_HOUR,
+        DAILY_HEARTBEAT_TIMEZONE,
+        DAILY_HEARTBEAT_WINDOW_MINUTES,
+        sorted(DAILY_HEARTBEAT_ALLOWED_USER_IDS) if DAILY_HEARTBEAT_ALLOWED_USER_IDS else "all-opted-in-users",
+    )
+    while True:
+        try:
+            sent_count = await run_daily_heartbeat_cycle()
+            if sent_count:
+                logger.info("Daily heartbeat scheduler sent %s check-in(s)", sent_count)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error("Daily heartbeat scheduler loop error: %s", e)
+        await asyncio.sleep(DAILY_HEARTBEAT_POLL_SECONDS)
+
+
 # =============================================================================
 # FastAPI App
 # =============================================================================
 
 # Global reference to the telegram application
 telegram_app: Application = None
+daily_heartbeat_task: asyncio.Task | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events for FastAPI."""
-    global telegram_app, db_manager
+    global telegram_app, db_manager, daily_heartbeat_task
     
     # Startup: Initialize PostgreSQL database first
     logger.info(f"[{INSTANCE_ID}] Initializing PostgreSQL database...")
@@ -414,6 +891,8 @@ async def lifespan(app: FastAPI):
             BotCommand("mode", "🔓 Switch to Personal Mode"),
             BotCommand("clear", "🧹 Clear history"),
             BotCommand("model", "🧪 Switch AI model"),
+            BotCommand("schedule", "⏰ Manage daily check-ins"),
+            BotCommand("feedback", "📝 Share quick feedback"),
         ]
         
         async def set_commands():
@@ -428,6 +907,7 @@ async def lifespan(app: FastAPI):
         telegram_app.add_handler(CommandHandler("clear", cmd_clear))
         telegram_app.add_handler(CommandHandler("mode", cmd_mode))
         telegram_app.add_handler(CommandHandler("model", cmd_model))
+        telegram_app.add_handler(CommandHandler("feedback", cmd_feedback))
         telegram_app.add_handler(CommandHandler("context", cmd_context))
         telegram_app.add_handler(CommandHandler("remember", cmd_remember))
         telegram_app.add_handler(CommandHandler("forget", cmd_forget))
@@ -455,10 +935,24 @@ async def lifespan(app: FastAPI):
         else:
             logger.info(f"[{INSTANCE_ID}] Starting polling mode...")
             await telegram_app.updater.start_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+
+        if DAILY_HEARTBEAT_ENABLED:
+            daily_heartbeat_task = asyncio.create_task(daily_heartbeat_scheduler_loop(), name="mindmate-daily-heartbeat")
+            logger.info(f"[{INSTANCE_ID}] ✅ Daily heartbeat scheduler started")
+        else:
+            logger.info(f"[{INSTANCE_ID}] Daily heartbeat scheduler disabled via env")
         
         logger.info(f"[{INSTANCE_ID}] ✅ Bot is running!")
     
     yield  # App is running
+    
+    if daily_heartbeat_task:
+        daily_heartbeat_task.cancel()
+        try:
+            await daily_heartbeat_task
+        except asyncio.CancelledError:
+            pass
+        daily_heartbeat_task = None
     
     # Shutdown: Close database and stop the bot
     if db_manager:
@@ -643,6 +1137,150 @@ async def clear_history(user_id: int) -> None:
 def detect_crisis(message: str) -> bool:
     message_lower = message.lower()
     return any(keyword in message_lower for keyword in CRISIS_KEYWORDS)
+
+
+WEB_TEMPORAL_SIGNALS = (
+    "today", "tonight", "tomorrow", "now", "right now", "current", "currently",
+    "latest", "recent", "recently", "live", "this week", "this month", "this year",
+    "as of", "update", "updates", "headline", "headlines", "lately",
+)
+WEB_LIVE_TOPICS = (
+    "weather", "forecast", "temperature", "rain", "news", "price", "stock", "market",
+    "bitcoin", "btc", "ethereum", "eth", "gold", "oil", "exchange rate", "zar", "usd",
+    "score", "scores", "match", "game", "traffic", "load shedding", "power outage",
+)
+WEB_HEALTH_TOPICS = (
+    "symptom", "symptoms", "medication", "medicine", "meds", "dose", "dosage",
+    "side effect", "side effects", "interaction", "interactions", "treatment",
+    "therapy", "therapist", "psychiatrist", "clinic", "hospital", "pharmacy",
+    "helpline", "hotline", "flu", "covid", "virus", "outbreak", "vaccine",
+)
+WEB_LOCATION_TOPICS = (
+    "near me", "nearby", "closest", "open now", "in my area", "local",
+    "where can i", "where do i", "which hospital", "which clinic", "which pharmacy",
+)
+WEB_CURRENT_EVENT_TOPICS = (
+    "war", "conflict", "ceasefire", "strike", "missile", "attack", "attacks",
+    "election", "protest", "sanction", "sanctions", "summit", "crime", "violence",
+)
+WEB_UPDATE_INTENTS = (
+    "latest on", "update on", "updates on", "news on", "what's the update",
+    "whats the update", "what is the update", "what's happening", "whats happening",
+    "what is happening", "what happened", "any update on", "any updates on",
+)
+WEB_QUESTION_STARTERS = (
+    "what", "what's", "whats", "how", "is", "are", "will", "did", "can", "when",
+)
+EXPLICIT_WEB_SEARCH_RE = re.compile(
+    r"^(?:hey\s+mindmate[,!]?\s+)?(?:can you|could you|would you|please|pls|kindly)?\s*"
+    r"(?:search (?:the )?web|search online|check online|check the internet|look (?:it|this|that) up)\b"
+    r"(?:\s+(?:for|about|on))?[\s:,-]*(.*)$",
+    re.IGNORECASE,
+)
+FOLLOW_UP_REFERENCE_TERMS = ("there", "that", "it", "this", "they", "those", "these")
+FOLLOW_UP_TIME_TERMS = ("lately", "right now", "currently", "latest", "recently", "today", "now", "still")
+FOLLOW_UP_PERSONAL_TERMS = (
+    " i ", " i'm ", " ive ", " i've ", " me ", " my ", " myself ", " we ", " our ",
+    "feel", "feeling", "anxious", "sad", "depressed", "relationship", "therapy",
+)
+
+
+def _normalize_for_web_routing(message: str) -> str:
+    return (message or "").strip().lower().replace("’", "'").replace("“", '"').replace("”", '"').replace("–", "-").replace("—", "-")
+
+
+def _looks_like_live_or_current_query(message: str) -> bool:
+    stripped = (message or "").strip()
+    if not stripped or len(stripped) > 200:
+        return False
+
+    normalized = _normalize_for_web_routing(stripped)
+    if normalized.startswith("web:"):
+        return True
+
+    has_temporal_signal = any(token in normalized for token in WEB_TEMPORAL_SIGNALS)
+    has_live_topic = any(token in normalized for token in WEB_LIVE_TOPICS)
+    has_health_topic = any(token in normalized for token in WEB_HEALTH_TOPICS)
+    has_location_topic = any(token in normalized for token in WEB_LOCATION_TOPICS)
+    has_current_event_topic = any(token in normalized for token in WEB_CURRENT_EVENT_TOPICS)
+    has_update_intent = any(token in normalized for token in WEB_UPDATE_INTENTS)
+    looks_like_question = "?" in stripped or normalized.startswith(WEB_QUESTION_STARTERS)
+
+    return looks_like_question and (
+        (has_temporal_signal and (has_live_topic or has_health_topic or has_location_topic))
+        or (has_update_intent and (has_current_event_topic or has_health_topic))
+        or (has_location_topic and has_health_topic)
+    )
+
+
+def _last_live_web_topic(history: list[dict[str, str]] | None) -> str | None:
+    if not history or len(history) < 2:
+        return None
+
+    last_assistant = history[-1]
+    last_user = history[-2]
+    if last_assistant.get("role") != "assistant" or last_user.get("role") != "user":
+        return None
+
+    assistant_text = last_assistant.get("content", "")
+    user_text = (last_user.get("content") or "").strip()
+    normalized = _normalize_for_web_routing(user_text)
+    padded = f" {normalized} "
+    personal_signal = any(term in padded for term in FOLLOW_UP_PERSONAL_TERMS)
+    has_topical_signal = (
+        any(token in normalized for token in WEB_UPDATE_INTENTS)
+        or any(token in normalized for token in WEB_TEMPORAL_SIGNALS)
+        or any(token in normalized for token in WEB_LIVE_TOPICS)
+        or any(token in normalized for token in WEB_CURRENT_EVENT_TOPICS)
+    )
+    if "🌐 Used live web" not in assistant_text:
+        return None
+    if not user_text or len(user_text) > 200 or personal_signal or not has_topical_signal:
+        return None
+    return user_text
+
+
+def extract_auto_web_query(message: str, history: list[dict[str, str]] | None = None) -> str | None:
+    """Return a safe auto-web query or None."""
+    if not AUTO_WEB_SEARCH_ENABLED:
+        return None
+
+    stripped = (message or "").strip()
+    if not stripped or len(stripped) > 200:
+        return None
+
+    normalized = _normalize_for_web_routing(stripped)
+    if normalized.startswith("web:"):
+        return None
+
+    recent_live_topic = _last_live_web_topic(history)
+
+    explicit_match = EXPLICIT_WEB_SEARCH_RE.match(stripped)
+    if explicit_match:
+        explicit_tail = explicit_match.group(1).strip(" :-,?!.")
+        if explicit_tail:
+            return explicit_tail
+        return recent_live_topic
+
+    if _looks_like_live_or_current_query(stripped):
+        return stripped
+
+    word_count = len(stripped.split())
+    looks_like_question = "?" in stripped or normalized.startswith(WEB_QUESTION_STARTERS)
+    has_reference = any(term in normalized.split() for term in FOLLOW_UP_REFERENCE_TERMS)
+    has_time_signal = any(term in normalized for term in FOLLOW_UP_TIME_TERMS)
+    padded = f" {normalized} "
+    personal_signal = any(term in padded for term in FOLLOW_UP_PERSONAL_TERMS)
+
+    if recent_live_topic and word_count <= 10 and looks_like_question and has_reference and has_time_signal and not personal_signal:
+        return f"{recent_live_topic} {stripped}"
+
+    return None
+
+
+def should_auto_web_search(message: str, history: list[dict[str, str]] | None = None) -> bool:
+    """Return True when conservative auto-web routing should run."""
+    return extract_auto_web_query(message, history) is not None
 # Telegram Bot Handlers
 # =============================================================================
 
@@ -695,6 +1333,58 @@ async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await clear_history(user_id)
     logger.info(f"User {user_id} cleared history")
     await send_markdown_message(update, "Conversation history cleared. 🧹")
+
+async def cmd_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Store lightweight user feedback for product improvement."""
+    user_id = update.effective_user.id
+    feedback_text = " ".join(context.args).strip()
+
+    if not feedback_text:
+        await send_markdown_message(update,
+            "📝 **Share feedback anytime**\n\n"
+            "Use `/feedback <what helped or what felt off>`\n"
+            "Example: `/feedback The reminder tone felt supportive, but the reply was too long.`"
+        )
+        return
+
+    metadata = {
+        "command": "feedback",
+        "personal_mode": is_personal_mode(user_id),
+        "model": get_user_model(user_id),
+        "message_date": update.message.date.isoformat() if update.message and update.message.date else None,
+        "storage_mode": "memory" if is_degraded_memory_mode() else "persistent",
+    }
+
+    saved = False
+    session_only = False
+    storage_label = "unknown"
+
+    if db_manager and hasattr(db_manager, "store_feedback"):
+        try:
+            result = await db_manager.store_feedback(user_id, feedback_text, metadata=metadata, source="telegram-command")
+            saved = bool(result.get("saved"))
+            session_only = bool(result.get("session_only"))
+            storage_label = result.get("storage", storage_label)
+        except Exception as e:
+            logger.warning(f"Failed to store feedback for user {user_id}: {e}")
+
+    if not saved:
+        await send_markdown_message(update,
+            "📝 Thanks — I couldn't save that note permanently just now, but the feedback command is live and can be retried later."
+        )
+        return
+
+    if session_only:
+        await send_markdown_message(update,
+            "📝 Thanks — I saved that feedback for this session, but my longer-term memory is temporarily limited right now."
+        )
+    else:
+        await send_markdown_message(update,
+            "📝 Thanks — I saved that feedback for review."
+        )
+
+    logger.info(f"Stored feedback from user {user_id} via {storage_label} storage")
+
 
 async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /model command for A/B testing."""
@@ -979,28 +1669,90 @@ async def cmd_journal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Set up automated daily journaling reminders."""
+    """Manage the env-gated daily journaling reminder MVP."""
     user_id = update.effective_user.id
-    
+
     if not is_personal_mode(user_id):
         await send_markdown_message(update, "This feature is only available in Personal Mode.")
         return
-    
-    # For now, just show the current schedule info
-    await update.message.reply_text(
-        f"⏰ **Daily Journal Schedule**\n\n"
-        f"🌅 **6:00 PM Daily Reminder**\n"
-        f"I'll send you a gentle reminder each evening to share your day.\n\n"
-        f"💡 **How it works:**\n"
-        f"• At 6 PM, I'll message you for your daily summary\n"
-        f"• Just reply naturally - no commands needed\n"
-        f"• If you're busy, say \"later\" and I'll check in tomorrow\n\n"
-        f"🎯 **Benefits:**\n"
-        f"• Builds consistent self-reflection habit\n"
-        f"• Helps track mood patterns over time\n"
-        f"• Creates valuable insights for your wellness journey\n\n"
-        f"📝 **Your recent activity:**\n"
-        f"Last summary: {user_journey.get(user_id, {}).get('last_daily_summary', 'No recent summaries')}"
+
+    action = (context.args[0].strip().lower() if context.args else "status")
+    if action not in {"status", "on", "off", "test"}:
+        await update.message.reply_text(
+            "⏰ Use `/schedule status`, `/schedule on`, `/schedule off`, or `/schedule test`."
+        )
+        return
+
+    rollout_limited = bool(DAILY_HEARTBEAT_ALLOWED_USER_IDS)
+    rollout_allows_user = (not rollout_limited) or (user_id in DAILY_HEARTBEAT_ALLOWED_USER_IDS)
+
+    if action == "test":
+        if not can_force_test_daily_heartbeat(user_id):
+            await update.message.reply_text(
+                "⏰ Manual test sends are limited to the current heartbeat test allowlist."
+            )
+            return
+        if not telegram_app or not telegram_app.bot:
+            await update.message.reply_text(
+                "⏰ The live bot context isn't ready yet. Please try again in a moment."
+            )
+            return
+        if daily_summary_tracking.get(user_id, {}).get("waiting_for_summary"):
+            await update.message.reply_text(
+                "⏰ You've already got an active check-in waiting for a reply, so I didn't send another one."
+            )
+            return
+
+        await send_scheduled_daily_summary(user_id)
+        if daily_summary_tracking.get(user_id, {}).get("waiting_for_summary"):
+            await update.message.reply_text(
+                "🧪 Sent a live test check-in from inside the running bot. This won't mark today's scheduled send as completed."
+            )
+        else:
+            await update.message.reply_text(
+                "⏰ I couldn't send the live test check-in just now. Please check the bot logs."
+            )
+        return
+
+    if action == "on":
+        if not DAILY_HEARTBEAT_ENABLED:
+            await update.message.reply_text(
+                "⏰ Daily check-ins aren't live right now. The scheduler is still disabled on the server."
+            )
+            return
+        if not rollout_allows_user:
+            await update.message.reply_text(
+                "⏰ Daily check-ins are in a limited rollout right now, so I can't enable them for this account yet."
+            )
+            return
+        await set_daily_heartbeat_enabled_for_user(user_id, True)
+    elif action == "off":
+        await set_daily_heartbeat_enabled_for_user(user_id, False)
+
+    enabled_for_user = await is_daily_heartbeat_enabled_for_user(user_id)
+    last_summary = user_journey.get(user_id, {}).get('last_daily_summary', 'No recent summaries')
+    timezone_name = get_daily_heartbeat_timezone().key
+    rollout_note = "Limited rollout (default on)" if rollout_limited else "Default on"
+    scheduler_status = "enabled" if DAILY_HEARTBEAT_ENABLED else "disabled"
+    user_status = "on" if enabled_for_user else "off"
+    delivery_mode = (
+        f"group/topic chat **{DAILY_HEARTBEAT_CHAT_ID}** / thread **{DAILY_HEARTBEAT_MESSAGE_THREAD_ID}**"
+        if DAILY_HEARTBEAT_CHAT_ID is not None and DAILY_HEARTBEAT_MESSAGE_THREAD_ID is not None
+        else f"group chat **{DAILY_HEARTBEAT_CHAT_ID}**"
+        if DAILY_HEARTBEAT_CHAT_ID is not None
+        else "direct message"
+    )
+
+    await send_markdown_message(
+        update,
+        f"⏰ **Daily Check-in Schedule**\n\n"
+        f"Scheduler: **{scheduler_status}**\n"
+        f"Your reminder: **{user_status}**\n"
+        f"Time: **{DAILY_HEARTBEAT_HOUR:02d}:00 {timezone_name}**\n"
+        f"Delivery: **{delivery_mode}**\n"
+        f"Rollout: **{rollout_note}**\n\n"
+        f"Reply naturally when I check in. If you're busy, say **later** or **skip** and I'll leave it for the next day.\n\n"
+        f"Recent activity: **{last_summary}**"
     )
 
 
@@ -1054,6 +1806,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = update.effective_user.id
     message = update.message.text
     personal_mode = is_personal_mode(user_id)
+    history = await get_history(user_id)
 
     # ------------------------------------------------------------------
     # Optional, explicit Brave web search trigger
@@ -1062,30 +1815,67 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # ------------------------------------------------------------------
     web_results = None
     web_query = None
+    web_search_result = None
+    used_web = False
 
     stripped = message.strip()
     lowered = stripped.lower()
     if lowered.startswith("web:"):
         # Everything after the first colon is treated as the web query
         web_query = stripped.split(":", 1)[1].strip()
-        if web_query:
-            try:
-                web_results = search_web(web_query, max_results=5)
-                logger.info(f"Fetched web results for user {user_id} query: {web_query[:80]}...")
-            except Exception as e:  # Defensive; search_web should already be safe
-                logger.error(f"Web search failed for user {user_id}: {e}")
-                await update.message.reply_text(
-                    "I couldn't fetch web results right now, so I'll respond without live web data."
-                )
-        else:
+        if not web_query:
             await update.message.reply_text(
                 "To use web search, type something like: `web: bitcoin price today`.",
             )
             return
 
+        search_result = search_web(web_query, max_results=5)
+        if search_result.ok:
+            web_search_result = search_result
+            web_results = search_result.summary
+            used_web = True
+            logger.info(
+                "Fetched %s web results for user %s query: %s...",
+                search_result.result_count,
+                user_id,
+                web_query[:80],
+            )
+        else:
+            logger.warning(
+                "Web search unavailable for user %s query '%s': %s",
+                user_id,
+                web_query[:80],
+                search_result.error,
+            )
+            await update.message.reply_text(
+                f"🌐 Web lookup unavailable: {search_result.error}\n\nI'll answer without live web data."
+            )
+
         # When using web search, treat the user's visible query as the portion after `web:`
         message = web_query
-    
+    else:
+        auto_web_query = extract_auto_web_query(stripped, history)
+        if auto_web_query:
+            web_query = auto_web_query
+            search_result = search_web(web_query, max_results=5)
+            if search_result.ok:
+                web_search_result = search_result
+                web_results = search_result.summary
+                used_web = True
+                logger.info(
+                    "Auto-fetched %s web results for user %s query: %s...",
+                    search_result.result_count,
+                    user_id,
+                    web_query[:80],
+                )
+            else:
+                logger.info(
+                    "Auto web lookup skipped for user %s query '%s': %s",
+                    user_id,
+                    web_query[:80],
+                    search_result.error,
+                )
+
     # Check if this is a reply to a scheduled daily summary message
     if user_id in daily_summary_tracking and daily_summary_tracking[user_id].get("waiting_for_summary"):
         # This is a reply to our 6pm daily summary request
@@ -1109,15 +1899,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not openai_client:
         await update.message.reply_text("I'm temporarily unavailable. Please try again later.")
         return
-    
-    
+
+    await maybe_send_degraded_mode_notice(update, user_id)
+
     # Select system prompt based on mode
     system_prompt = get_personal_mode_prompt(user_id) if personal_mode else SYSTEM_PROMPT
     current_model = get_user_model(user_id)
     
     # Add time context for temporal awareness
     current_time = update.message.date.strftime("%I:%M %p on %B %d, %Y")
-    system_prompt = f"{system_prompt}\n\nCurrent time: {current_time}"
+    system_prompt = (
+        f"{system_prompt}\n\n"
+        f"Current time: {current_time}\n\n"
+        f"Routing reminder: Prefer live web-backed context for current, changing, or location-specific factual questions about health resources, medical/public-health updates, news, weather, or nearby services when that context is available. "
+        f"Do not force web behaviour for journaling, emotional support, or reflective conversation unless the user is clearly asking for live facts."
+    )
 
     # If we have explicit web search results, inject them as additional
     # system context rather than raw user content.
@@ -1134,7 +1930,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     try:
         messages = [{"role": "system", "content": system_prompt}]
-        history = await get_history(user_id)
         messages.extend(history)
         messages.append({"role": "user", "content": message})
         
@@ -1147,6 +1942,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             frequency_penalty=0.3
         )
         reply = response.choices[0].message.content
+
+        web_attribution_line = build_web_attribution_line(web_search_result) if used_web else ""
+        if web_attribution_line:
+            reply = f"{reply}\n\n{web_attribution_line}"
         
         await add_to_history(user_id, "user", message)
         await add_to_history(user_id, "assistant", reply)
@@ -1156,10 +1955,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
     except OpenAIError as e:
         logger.error(f"OpenAI error: {e}")
-        await update.message.reply_text("I'm having trouble right now. Please try again. 💙")
+        await update.message.reply_text(
+            build_chat_recovery_message(e, used_web=used_web)
+        )
     except Exception as e:
         logger.error(f"Error: {e}")
-        await update.message.reply_text("Something went wrong. Please try again.")
+        await update.message.reply_text(
+            "💙 Something went wrong while I was preparing that reply. "
+            "Please try again, or resend the main part in one shorter message."
+        )
 
 
 async def handle_daily_summary_response(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, message: str) -> None:
@@ -1175,7 +1979,7 @@ async def handle_daily_summary_response(update: Update, context: ContextTypes.DE
         
         await update.message.reply_text(
             f"👍 **No problem!** I understand you're busy right now.\n\n"
-            f"💡 Just send me your daily summary whenever you're ready, or I'll check in again tomorrow at 6pm.\n\n"
+            f"💡 Just send me your check-in whenever you're ready, or I'll check in again tomorrow morning.\n\n"
             f"Take care! 💙"
         )
         
@@ -1183,7 +1987,7 @@ async def handle_daily_summary_response(update: Update, context: ContextTypes.DE
         update_user_journey(user_id, "journaling_pattern", "Sometimes busy, flexible schedule")
         return
     
-    # This looks like a daily summary - save it
+    # This looks like a daily heartbeat reply - save it as a journal check-in
     today = datetime.now().strftime("%Y-%m-%d")
     
     # Initialize user's journal if not exists
@@ -1197,7 +2001,7 @@ async def handle_daily_summary_response(update: Update, context: ContextTypes.DE
     daily_journals[user_id][today].append({
         "timestamp": datetime.now().isoformat(),
         "entry": message,
-        "type": "daily_summary",
+        "type": "daily_heartbeat",
         "mood": None,  # Will be analyzed from content
         "plan_tomorrow": None  # Will be extracted from content
     })
@@ -1210,11 +2014,9 @@ async def handle_daily_summary_response(update: Update, context: ContextTypes.DE
     update_user_journey(user_id, "journaling_habit", "Active - responds to daily prompts")
     
     await update.message.reply_text(
-        f"✅ **Daily Summary Saved!**\n\n"
-        f"Thanks for sharing your day with me. Your summary has been recorded for {today}.\n\n"
-        f"💡 This helps me understand your patterns and provide better support. "
-        f"I'll check in again tomorrow at 6pm!\n\n"
-        f"🌙 Sweet dreams and talk to you tomorrow! 💙"
+        f"✅ **Check-in Saved!**\n\n"
+        f"Thanks for sharing. I saved this for {today} so I can support you with better continuity.\n\n"
+        f"💡 I'll check in again tomorrow morning, and you can message me anytime before then too. 💙"
     )
     
     logger.info(f"User {user_id} submitted daily summary for {today}")
@@ -1276,41 +2078,43 @@ def update_context_from_message(user_id: int, message: str) -> None:
 
 
 async def send_scheduled_daily_summary(user_id: int) -> None:
-    """Send the 6pm daily summary request and track the response."""
-    
-    # Set tracking flag
+    """Send the once-daily proactive MindMate check-in and track the reply."""
+
     if user_id not in daily_summary_tracking:
         daily_summary_tracking[user_id] = {}
-    
+
     daily_summary_tracking[user_id] = {
         "waiting_for_summary": True,
         "sent_time": datetime.now().isoformat(),
-        "message_id": None  # Will be set when message is sent
+        "message_id": None,
+        "kind": "daily_heartbeat",
     }
-    
-    # Send the daily summary request
+
     try:
-        message = await telegram_app.bot.send_message(
-            chat_id=user_id,
-            text=(
-                f"🌅 **Good evening! It's 6pm - Daily Summary Time!**\n\n"
-                f"How was your day today? Take a moment to reflect and share:\n\n"
-                f"• What happened today?\n"
-                f"• How are you feeling?\n"
-                f"• What are your plans for tomorrow?\n\n"
-                f"💡 Just reply to this message with your thoughts - no commands needed!\n\n"
-                f"📔 I'll save this as your daily journal entry."
-            )
-        )
-        
-        # Store the message ID for tracking
+        heartbeat_text = await build_daily_heartbeat_message(user_id)
+        target_chat_id = DAILY_HEARTBEAT_CHAT_ID if DAILY_HEARTBEAT_CHAT_ID is not None else user_id
+        send_kwargs = {
+            "chat_id": target_chat_id,
+            "text": heartbeat_text,
+        }
+        if DAILY_HEARTBEAT_CHAT_ID is not None and DAILY_HEARTBEAT_MESSAGE_THREAD_ID is not None:
+            send_kwargs["message_thread_id"] = DAILY_HEARTBEAT_MESSAGE_THREAD_ID
+
+        message = await telegram_app.bot.send_message(**send_kwargs)
+
         daily_summary_tracking[user_id]["message_id"] = message.message_id
-        
-        logger.info(f"Sent daily summary request to user {user_id}")
-        
+        if DAILY_HEARTBEAT_CHAT_ID is not None:
+            logger.info(
+                "Sent daily heartbeat check-in for user %s to chat %s thread %s",
+                user_id,
+                target_chat_id,
+                DAILY_HEARTBEAT_MESSAGE_THREAD_ID,
+            )
+        else:
+            logger.info(f"Sent daily heartbeat check-in to user {user_id}")
+
     except Exception as e:
-        logger.error(f"Failed to send daily summary to user {user_id}: {e}")
-        # Reset tracking on failure
+        logger.error(f"Failed to send daily heartbeat to user {user_id}: {e}")
         daily_summary_tracking[user_id]["waiting_for_summary"] = False
 
 
