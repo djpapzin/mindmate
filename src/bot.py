@@ -722,7 +722,11 @@ def _select_heartbeat_context_messages(messages: list[str], limit: int = 3) -> l
         deduped_current_events.append(message)
         if len(deduped_current_events) >= limit:
             break
-    return deduped_current_events
+
+    # Do not force vague current-events phrasing into a personal morning check-in.
+    # If we only found low-value current-events style context, it's better to omit
+    # the "Recently, you've been carrying this" line entirely.
+    return []
 
 
 async def build_daily_heartbeat_message(user_id: int, now: datetime | None = None) -> str:
