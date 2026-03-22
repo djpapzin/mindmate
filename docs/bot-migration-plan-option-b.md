@@ -1,5 +1,8 @@
 # MindMate Option B: Rebrand Dev Bot as Production (No New Prod Bot)
 
+> Historical planning note: this file is a migration/planning artifact, not the canonical source of current runtime architecture. For current storage/runtime truth, prefer `README.md`, `docs/ARCHITECTURE.md`, and `docs/WORKFLOW.md`.
+
+
 ## Goal
 Keep your **current daily-use bot** (`@mindmate_dev_bot`) as the **official production bot**, and repurpose your **old production bot** (`@mywellnesscompanion_bot`) as the **new development/staging bot**.
 

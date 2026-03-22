@@ -200,9 +200,9 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed plans:
 - [x] Webhook Support
 - [x] A/B Testing Tools
 - [x] Persistent Memory (PostgreSQL)
+- [x] Voice Messages
+- [x] Daily Check-ins
 - [ ] WhatsApp Integration (Twilio)
-- [ ] Voice Messages
-- [ ] Daily Check-ins
 
 ---
 

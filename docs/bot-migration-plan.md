@@ -1,5 +1,8 @@
 # MindMate Telegram Bot Migration Plan (Dev -> Production)
 
+> Historical planning note: this file is a migration/planning artifact, not the canonical source of current runtime architecture. For current storage/runtime truth, prefer `README.md`, `docs/ARCHITECTURE.md`, and `docs/WORKFLOW.md`.
+
+
 ## Goal
 Move your **current daily-use bot** (currently the “dev bot”) into a **stable production setup** with a production-looking bot identity.
 

@@ -2,6 +2,8 @@
 
 ## Current Setup (Post-Migration)
 
+> Historical workflow note: bot/service names in this file reflect an older production/staging naming setup. Treat the storage/runtime notes here as current, but validate deployment naming against the live Render configuration before changing environments.
+
 | Bot | Render Service | Branch | URL | Purpose |
 |-----|----------------|-------|--------|---------|
 | `@mindmate_dev_bot` | `mindmate` | `main` | https://mindmate-dev.onrender.com | **Production** - Your partner uses this daily |

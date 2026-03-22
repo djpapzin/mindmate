@@ -2,6 +2,8 @@
 
 This file reflects the current, conservative runtime truth.
 
+Historical planning docs may still exist elsewhere in `docs/`, but they should be read as context/history unless they explicitly describe the current PostgreSQL runtime.
+
 ## Top-level overview
 
 ```

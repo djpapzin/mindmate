@@ -1,5 +1,8 @@
 # MindMate PostgreSQL Migration Guide
 
+> Historical/current note: this file documents the migration that established PostgreSQL as the active storage path. Redis references here should be read as migration history, not as evidence that Redis remains the active runtime datastore.
+
+
 ## Overview
 
 MindMate has migrated from **Redis** to **PostgreSQL** for persistent storage. This guide covers the migration and usage.
