@@ -871,6 +871,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"[{INSTANCE_ID}] ❌ Failed to connect to PostgreSQL: {e}")
         logger.info(f"[{INSTANCE_ID}] 🔄 Will use in-memory fallback storage")
         db_manager = PostgresInMemoryDatabase()
+        await db_manager.connect()
     
     # Initialize and start the Telegram bot
     logger.info(f"[{INSTANCE_ID}] Starting MindMate Bot...")

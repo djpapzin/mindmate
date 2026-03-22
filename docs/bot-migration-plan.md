@@ -1,11 +1,13 @@
 # MindMate Telegram Bot Migration Plan (Dev -> Production)
 
 ## Goal
-Move your **current daily-use bot** (currently the “dev bot”) into a **stable production setup** with a production-looking bot identity, while preserving user memory stored in Redis.
+Move your **current daily-use bot** (currently the “dev bot”) into a **stable production setup** with a production-looking bot identity.
+
+> Historical note: this plan originally assumed Redis-backed memory migration. MindMate now uses PostgreSQL as the active runtime datastore, with an in-memory fallback only when PostgreSQL is unavailable.
 
 Given your constraints:
 - Only **1 real user + you**
-- Users care mostly about **Redis memory**, not Telegram chat history
+- Users care mostly about **bot memory continuity**, not Telegram chat history
 
 This plan aims to:
 - Avoid breaking the current experience for the daily user.
@@ -19,13 +21,13 @@ This plan aims to:
 - **Telegram bot**: New production-looking username (create a new bot)
 - **Render service**: `mindmate-prod`
 - **Git branch**: `main`
-- **Database/Redis**: Prod Redis
+- **Storage**: Production PostgreSQL database
 
 ### Staging/Dev (Internal)
 - **Telegram bot**: Keep your existing dev bot (or create a new “staging” bot)
 - **Render service**: `mindmate-dev`
 - **Git branch**: `develop` (recommended) or current integration branch
-- **Database/Redis**: Dev Redis
+- **Storage**: Staging/development PostgreSQL database (or clearly isolated env config)
 
 Why: Telegram bot usernames cannot be changed, so the only way to avoid a “dev-looking” username is to use a new bot.
 
@@ -35,8 +37,8 @@ Why: Telegram bot usernames cannot be changed, so the only way to avoid a “dev
 
 - [ ] Confirm which bot is the current daily-use bot (the one your partner uses).
 - [ ] Confirm current Render mapping:
-  - [ ] `mindmate-dev` -> dev bot token -> dev Redis
-  - [ ] `mindmate-prod` -> prod bot token -> prod Redis
+  - [ ] `mindmate-dev` -> dev bot token -> dev database config
+  - [ ] `mindmate-prod` -> prod bot token -> prod database config
 - [ ] Decide your new public bot username (check availability in BotFather).
 
 > Note: Do **not** delete old bots/services yet. We’ll keep rollback options.
@@ -61,7 +63,7 @@ Deliverable:
 1. Go to Render dashboard → your **production service** (`mindmate-prod`).
 2. Set environment variables:
    - `TELEGRAM_BOT_TOKEN` = **new production bot token**
-   - Ensure it points to the **prod Redis/database**, not dev
+   - Ensure it points to the **production PostgreSQL/database config**, not dev
    - If you have an `ENV` variable, set it to `production`
 3. Deploy `mindmate-prod` from `main`.
 4. Test:
@@ -74,7 +76,7 @@ Rollback option:
 
 ---
 
-## Phase 3 — Migrate Memory (Dev Redis -> Prod Redis) (Optional but Recommended)
+## Phase 3 — Migrate Memory (Dev PostgreSQL/Data Snapshot -> Prod PostgreSQL) (Optional but Recommended)
 
 Because you only have **1 real user**, the simplest and safest approach is:
 
@@ -83,19 +85,16 @@ Because you only have **1 real user**, the simplest and safest approach is:
 - You seed it as “initial profile” in the new bot.
 
 ### Option B (Recommended): Scripted migration by Telegram `user_id`
-Migrate the user’s Redis keys from dev namespace to prod namespace.
+Migrate the user's stored memory records from the development data source into the production PostgreSQL data source, if you actually need historical continuity.
 
 High-level steps:
-1. Identify how memory is keyed in Redis (common patterns):
-   - `user:{id}:history`
-   - `memory:{id}`
-   - `conversation:{id}`
-2. Export keys for your user_id from dev Redis.
-3. Import into prod Redis under the same structure.
+1. Identify what data you actually want to preserve (messages, preferences, profile data).
+2. Export the relevant rows or take a safe snapshot from the development PostgreSQL database.
+3. Import or seed the needed data into the production PostgreSQL database with matching user identifiers.
 4. Validate by asking the new production bot questions that depend on memory.
 
 Safety notes:
-- Make a snapshot/export of dev keys before importing.
+- Make a snapshot/export of development data before importing.
 - Prefer **copy** over **move** (non-destructive).
 
 Deliverable:
@@ -139,8 +138,7 @@ Release process:
 
 ### Operational guardrails (high impact)
 - Add an `ENV` env var and print it on startup logs.
-- Use different Redis key prefixes per environment, e.g.:
-  - `dev:*` vs `prod:*`
+- Use clearly separate database configuration per environment (URLs, schemas, or isolated services).
 - Don’t push breaking changes straight into whatever bot real users rely on.
 
 ---

@@ -5,8 +5,9 @@ Keep your **current daily-use bot** (`@mindmate_dev_bot`) as the **official prod
 
 This avoids:
 - Setting up a new Render production service
-- Migrating user data/memory
 - Changing what your partner is already using daily
+
+> Historical note: earlier versions of this plan referred to Redis as the active datastore. MindMate now uses PostgreSQL in the active runtime, with in-memory fallback only when PostgreSQL is unavailable.
 
 ## Target End State (Simpler - Only 2 Bots)
 
@@ -14,14 +15,14 @@ This avoids:
 - **Telegram bot**: `@mindmate_dev_bot` (your current daily-use bot)
 - **Render service**: `mindmate-dev` (keep this as-is)
 - **Git branch**: `main`
-- **Database/Redis**: Current dev Redis becomes prod
+- **Storage**: Current production PostgreSQL/database config remains the prod path
 - **Users**: Your partner + you continue using this bot
 
 ### Staging (Development Playground)
 - **Telegram bot**: `@mywellnesscompanion_bot` (your OLD production bot, now repurposed)
 - **Render service**: Your OLD production Render service
 - **Git branch**: `develop` or feature branches
-- **Database/Redis**: Its existing Redis (already separate)
+- **Storage**: Its own staging/development database config (kept isolated from production)
 - **Users**: Only you (for testing)
 
 ## Phase 1 — Freeze Current Dev Bot (Do This First)
@@ -44,7 +45,7 @@ This avoids:
 3. [ ] **Create a new Render service** for staging:
    - Name: `mindmate-staging`
    - Branch: `develop`
-   - Environment variables: NEW bot token (create below), NEW Redis URL
+   - Environment variables: NEW bot token (create below), staging database config
    - Auto-deploy: YES (so staging stays current with `develop`)
 
 ### Why This Helps
@@ -71,7 +72,7 @@ Now we'll turn `@mywellnesscompanion_bot` into your testing ground.
 ### Step 3: Test Staging
 - Message `@mywellnesscompanion_bot`
 - Confirm it responds
-- Confirm it's using separate Redis (no pollution of your partner's production data)
+- Confirm it's using separate staging data/config (no pollution of your partner's production data)
 
 ---
 
@@ -166,7 +167,7 @@ Add to your bot startup:
 ```python
 print(f"🚀 MindMate starting in {ENV} mode")
 print(f"🤖 Bot: @{bot_username}")
-print(f"🗄️  Redis: {redis_host}")
+print(f"🗄️  Database: {db_host}")
 ```
 
 So logs always show which environment is running.
@@ -214,7 +215,7 @@ Recommendation: Option 2 for 1-2 months, then Option 1.
 - [ ] `develop` branch exists and is up to date
 - [ ] `mindmate-staging` service created and running
 - [ ] Staging bot responds correctly
-- [ ] Staging uses separate Redis (verify keys don't overlap)
+- [ ] Staging uses separate database/config isolation (verify data doesn't overlap)
 - [ ] README updated with correct bot links
 - [ ] Production bot description updated (explain "_dev" in username)
 - [ ] First feature branch tested: `feature/xyz` → `develop` → staging → `main` → prod
@@ -226,9 +227,9 @@ Recommendation: Option 2 for 1-2 months, then Option 1.
 1. **Staging bot username**: What do you want to call it?
    - Suggestion: `@mindmate_staging_bot` or `@mindmate_test_bot`
 
-2. **Redis for staging**: Same Redis with key prefix, or new Redis instance?
-   - Same Redis + prefix = easier, but risk of pollution if prefix logic has bugs
-   - New Redis = cleaner, slightly more setup
+2. **Database isolation for staging**: Same PostgreSQL instance with strict isolation, or a separate database/service?
+   - Same instance + careful isolation = easier, but higher blast radius if config is wrong
+   - Separate database/service = cleaner, slightly more setup
 
 3. **Render service naming**: Rename services or keep legacy names?
    - Rename: Clearer mentally, but requires Render config
@@ -240,6 +241,6 @@ Recommendation: Option 2 for 1-2 months, then Option 1.
 
 Tell me:
 1. Your preferred staging bot username
-2. Same Redis or new Redis for staging?
+2. Same PostgreSQL instance with clear isolation, or a separate database for staging?
 
 Then I'll help you execute Phase 1 (freeze current bot, create staging setup) without breaking your partner's experience.

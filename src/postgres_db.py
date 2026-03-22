@@ -140,7 +140,14 @@ class PostgresDatabase:
             pool.putconn(conn)
 
     async def semantic_search(self, user_id: int, query: str, limit: int = 5) -> List[Dict]:
-        """Basic keyword search - vector search requires embedding setup"""
+        """Keyword-only message lookup.
+
+        Despite the historical method name, the active PostgreSQL runtime does not
+        perform true semantic/vector retrieval here. This is currently a simple
+        `ILIKE` text match over stored message content. If real embedding-based
+        search is added later, update both the implementation and repo docs
+        explicitly rather than treating this as already-semantic behavior.
+        """
         pool = self._get_pool()
         conn = pool.getconn()
         cursor = conn.cursor(cursor_factory=RealDictCursor)

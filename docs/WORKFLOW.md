@@ -52,16 +52,16 @@ git push origin main
 - **Branch**: `main`
 - **URL**: https://mindmate-dev.onrender.com
 - **Auto-deploy**: ON
-- **Redis**: Production Redis instance (`mindmate-redis`)
-- **Database**: Redis with OpenAI embeddings (semantic search enabled)
+- **Storage**: PostgreSQL (`NEON_MINDMATE_DB_URL` / `DATABASE_URL`)
+- **Memory retrieval**: keyword-based `semantic_search(...)` over stored messages (not vector retrieval)
 
 ### Staging (`mindmate-dev`)
 - **Bot**: `@mywellnesscompanion_bot`
 - **Branch**: `feature/*` (varies)
 - **URL**: https://mindmate-uidn.onrender.com
 - **Auto-deploy**: ON (or manual)
-- **Redis**: Separate Redis instance
-- **Database**: Redis with OpenAI embeddings (semantic search enabled)
+- **Storage**: Separate PostgreSQL-backed staging/runtime config as needed
+- **Memory retrieval**: same keyword-based PostgreSQL lookup unless a future vector path is intentionally added
 
 ## Quick Reference
 
