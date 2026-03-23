@@ -151,7 +151,7 @@ RENDER_EXTERNAL_URL=https://your-app.onrender.com  # Optional: enables webhooks
 > Note: the current storage implementation uses PostgreSQL for persistence and falls back to in-memory storage if the database is unavailable. Redis is retained only as legacy migration/reference material.
 
 ### Daily direct check-ins at 07:00 SAST
-MindMate's built-in daily heartbeat scheduler sends by **direct message** unless you explicitly set a group chat/topic target.
+MindMate's built-in daily heartbeat scheduler sends by **direct message from the bot itself**.
 
 Use these env values for DJ Papzin's 07:00 SAST DM heartbeat:
 
@@ -160,8 +160,6 @@ DAILY_HEARTBEAT_ENABLED=true
 DAILY_HEARTBEAT_HOUR=7
 DAILY_HEARTBEAT_TIMEZONE=Africa/Johannesburg
 DAILY_HEARTBEAT_ALLOWED_USER_IDS=339651126
-DAILY_HEARTBEAT_CHAT_ID=
-DAILY_HEARTBEAT_MESSAGE_THREAD_ID=
 ```
 
 Then in Telegram, open a DM with the bot as DJ Papzin and run:

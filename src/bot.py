@@ -61,18 +61,6 @@ def _render_basic_telegram_html(text: str) -> str:
     return escaped
 
 
-def _parse_optional_int_env(name: str) -> int | None:
-    """Parse an optional integer environment variable, logging and ignoring invalid values."""
-    raw_value = os.getenv(name, "").strip()
-    if not raw_value:
-        return None
-    try:
-        return int(raw_value)
-    except ValueError:
-        logging.getLogger(__name__).warning("Invalid %s=%r; ignoring", name, raw_value)
-        return None
-
-
 async def send_markdown_message(update: Update, text: str):
     """Send a message using Telegram HTML after safely rendering simple markdown."""
     html_text = _render_basic_telegram_html(text)
@@ -97,8 +85,6 @@ DAILY_HEARTBEAT_HOUR = int(os.getenv("DAILY_HEARTBEAT_HOUR", "7"))
 DAILY_HEARTBEAT_WINDOW_MINUTES = max(1, int(os.getenv("DAILY_HEARTBEAT_WINDOW_MINUTES", "15")))
 DAILY_HEARTBEAT_POLL_SECONDS = max(30, int(os.getenv("DAILY_HEARTBEAT_POLL_SECONDS", "60")))
 DAILY_HEARTBEAT_TIMEZONE = os.getenv("DAILY_HEARTBEAT_TIMEZONE", "Africa/Johannesburg").strip() or "Africa/Johannesburg"
-DAILY_HEARTBEAT_CHAT_ID = _parse_optional_int_env("DAILY_HEARTBEAT_CHAT_ID")
-DAILY_HEARTBEAT_MESSAGE_THREAD_ID = _parse_optional_int_env("DAILY_HEARTBEAT_MESSAGE_THREAD_ID")
 DAILY_HEARTBEAT_ALLOWED_USER_IDS = {
     int(token.strip())
     for token in os.getenv("DAILY_HEARTBEAT_ALLOWED_USER_IDS", "").split(",")
@@ -533,10 +519,8 @@ async def set_daily_heartbeat_enabled_for_user(user_id: int, enabled: bool) -> N
 
 def can_force_test_daily_heartbeat(user_id: int) -> bool:
     """Return True when this user may manually trigger a live heartbeat test."""
-    return (
-        DAILY_HEARTBEAT_ENABLED
-        and user_id in PERSONAL_MODE_USERS
-        and user_id in DAILY_HEARTBEAT_ALLOWED_USER_IDS
+    return DAILY_HEARTBEAT_ENABLED and user_id in PERSONAL_MODE_USERS and (
+        not DAILY_HEARTBEAT_ALLOWED_USER_IDS or user_id in DAILY_HEARTBEAT_ALLOWED_USER_IDS
     )
 
 
@@ -818,11 +802,6 @@ async def build_daily_heartbeat_message(user_id: int, now: datetime | None = Non
 
 async def run_daily_heartbeat_cycle(now: datetime | None = None) -> int:
     """Send one scheduled daily check-in per eligible user per local day."""
-    if DAILY_HEARTBEAT_MESSAGE_THREAD_ID is not None and DAILY_HEARTBEAT_CHAT_ID is None:
-        logger.warning(
-            "DAILY_HEARTBEAT_MESSAGE_THREAD_ID is set without DAILY_HEARTBEAT_CHAT_ID; falling back to DM delivery"
-        )
-
     if not DAILY_HEARTBEAT_ENABLED or not telegram_app or not telegram_app.bot:
         return 0
 
@@ -1783,13 +1762,6 @@ async def cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     rollout_note = "Limited rollout (default on)" if rollout_limited else "Default on"
     scheduler_status = "enabled" if DAILY_HEARTBEAT_ENABLED else "disabled"
     user_status = "on" if enabled_for_user else "off"
-    delivery_mode = (
-        f"group/topic chat **{DAILY_HEARTBEAT_CHAT_ID}** / thread **{DAILY_HEARTBEAT_MESSAGE_THREAD_ID}**"
-        if DAILY_HEARTBEAT_CHAT_ID is not None and DAILY_HEARTBEAT_MESSAGE_THREAD_ID is not None
-        else f"group chat **{DAILY_HEARTBEAT_CHAT_ID}**"
-        if DAILY_HEARTBEAT_CHAT_ID is not None
-        else "direct message (default)"
-    )
 
     await send_markdown_message(
         update,
@@ -1797,7 +1769,7 @@ async def cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         f"Scheduler: **{scheduler_status}**\n"
         f"Your reminder: **{user_status}**\n"
         f"Time: **{DAILY_HEARTBEAT_HOUR:02d}:00 {timezone_name}**\n"
-        f"Delivery: **{delivery_mode}**\n"
+        f"Delivery: **direct message from MindMate**\n"
         f"Rollout: **{rollout_note}**\n\n"
         f"Reply naturally when I check in. If you're busy, say **later** or **skip** and I'll leave it for the next day.\n\n"
         f"Recent activity: **{last_summary}**"
@@ -2140,26 +2112,10 @@ async def send_scheduled_daily_summary(user_id: int) -> None:
 
     try:
         heartbeat_text = await build_daily_heartbeat_message(user_id)
-        target_chat_id = DAILY_HEARTBEAT_CHAT_ID if DAILY_HEARTBEAT_CHAT_ID is not None else user_id
-        send_kwargs = {
-            "chat_id": target_chat_id,
-            "text": heartbeat_text,
-        }
-        if DAILY_HEARTBEAT_CHAT_ID is not None and DAILY_HEARTBEAT_MESSAGE_THREAD_ID is not None:
-            send_kwargs["message_thread_id"] = DAILY_HEARTBEAT_MESSAGE_THREAD_ID
-
-        message = await telegram_app.bot.send_message(**send_kwargs)
+        message = await telegram_app.bot.send_message(chat_id=user_id, text=heartbeat_text)
 
         daily_summary_tracking[user_id]["message_id"] = message.message_id
-        if DAILY_HEARTBEAT_CHAT_ID is not None:
-            logger.info(
-                "Sent daily heartbeat check-in for user %s to chat %s thread %s",
-                user_id,
-                target_chat_id,
-                DAILY_HEARTBEAT_MESSAGE_THREAD_ID,
-            )
-        else:
-            logger.info(f"Sent daily heartbeat check-in to user {user_id}")
+        logger.info("Sent daily heartbeat check-in to user %s via direct message", user_id)
 
     except Exception as e:
         logger.error(f"Failed to send daily heartbeat to user {user_id}: {e}")
