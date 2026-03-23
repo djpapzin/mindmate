@@ -34,10 +34,13 @@
 | `/clear` | Clear conversation history |
 | `/help` | Show available commands |
 | `/mode` | Check your mode (Standard/Personal) |
+| `/votd` | Get today's Bible verse |
 | `/model` | Switch AI models for A/B testing |
 | `/feedback` | Save a quick product note for review |
 | `/schedule` | Manage daily direct check-ins (07:00 SAST by default) |
 | `/voice` | Choose voice personality (coming soon) |
+
+> `/votd` uses the public OurManna Verse of the Day JSON endpoint and needs no extra API key.
 
 ---
 

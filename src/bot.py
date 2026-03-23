@@ -25,6 +25,7 @@ import uvicorn
 
 # Brave web search helper (optional, opt-in via explicit trigger)
 from web_search import build_web_attribution_line, search_web
+from verse_of_the_day import get_verse_of_the_day
 
 # Import the active storage module: PostgreSQL with an in-memory fallback.
 from postgres_db import Message, PostgresDatabase
@@ -341,6 +342,7 @@ HELP_MESSAGE = """**How I can support you:**
 /clear - Clear conversation history
 /help - Show this message
 /mode - Show your current mode and model
+/votd - Get today's Bible verse
 /context - Share important info about your condition/meds (Personal Mode only)
 /remember - Remember important information easier than /context
 /forget - Forget specific information I've learned
@@ -456,6 +458,29 @@ def build_chat_recovery_message(error: Exception, used_web: bool = False) -> str
 
     message += " You can also use /feedback to flag it for review."
     return message
+
+
+def format_votd_message(verse_text: str, reference: str, version: str | None = None, link: str | None = None) -> str:
+    """Render a short, mobile-friendly Verse of the Day message."""
+    version_suffix = f" ({version})" if version else ""
+    message = (
+        "📖 **Verse of the Day**\n\n"
+        f'“{verse_text}”\n\n'
+        f"**{reference}**{version_suffix}"
+    )
+
+    if link:
+        message += f"\n🔗 {link}"
+
+    return message
+
+
+async def send_votd_unavailable(update: Update) -> None:
+    """Keep /votd responsive when the verse source is temporarily unavailable."""
+    await send_markdown_message(
+        update,
+        "📖 I couldn't fetch today's verse right now. Please try `/votd` again in a little bit."
+    )
 
 
 def is_degraded_memory_mode() -> bool:
@@ -888,6 +913,7 @@ async def lifespan(app: FastAPI):
             BotCommand("help", "❓ Get help"),
             BotCommand("mode", "🔓 Switch to Personal Mode"),
             BotCommand("clear", "🧹 Clear history"),
+            BotCommand("votd", "📖 Get today's Bible verse"),
             BotCommand("model", "🧪 Switch AI model"),
             BotCommand("schedule", "⏰ Manage daily check-ins"),
             BotCommand("feedback", "📝 Share quick feedback"),
@@ -904,6 +930,7 @@ async def lifespan(app: FastAPI):
         telegram_app.add_handler(CommandHandler("help", cmd_help))
         telegram_app.add_handler(CommandHandler("clear", cmd_clear))
         telegram_app.add_handler(CommandHandler("mode", cmd_mode))
+        telegram_app.add_handler(CommandHandler("votd", cmd_votd))
         telegram_app.add_handler(CommandHandler("model", cmd_model))
         telegram_app.add_handler(CommandHandler("feedback", cmd_feedback))
         telegram_app.add_handler(CommandHandler("context", cmd_context))
@@ -1300,6 +1327,29 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await send_markdown_message(update, HELP_MESSAGE)
+
+
+async def cmd_votd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send a short Bible verse of the day."""
+    user_id = update.effective_user.id if update.effective_user else "unknown"
+
+    try:
+        verse = await get_verse_of_the_day()
+    except Exception as e:
+        logger.warning(f"Failed to fetch Verse of the Day for user {user_id}: {e}")
+        await send_votd_unavailable(update)
+        return
+
+    await send_markdown_message(
+        update,
+        format_votd_message(
+            verse_text=verse.text,
+            reference=verse.reference,
+            version=verse.version,
+            link=verse.link,
+        ),
+    )
+
 
 async def cmd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show current mode and model assignment."""
