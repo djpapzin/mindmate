@@ -46,7 +46,7 @@
 
 ## 🔓 Personal Mode
 
-A private, unfiltered AI therapist experience for authorized users.
+A private, more direct AI support companion experience for authorized users.
 
 | Feature | Standard Mode | Personal Mode |
 |---------|---------------|---------------|

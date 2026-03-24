@@ -1587,8 +1587,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
             "👋 Welcome back!\n\n"
             "🔓 **Personal Mode Active**\n\n"
-            "I'm your personal AI therapist - here to give you direct, "
-            "honest support without the corporate disclaimers.\n\n"
+            "I'm here as your personal support companion — warm, direct, "
+            "and tailored to you, without pretending to be a clinician.\n\n"
             "What's on your mind today? 💙"
         )
     else:
