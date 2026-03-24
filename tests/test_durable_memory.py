@@ -190,6 +190,67 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(journey.get("relationship_status"), "Supportive partner")
 
 
+class PersonaPromptTests(unittest.TestCase):
+    def test_standard_system_prompt_includes_safety_and_anti_template_rules(self):
+        prompt = bot.build_generation_system_prompt(
+            user_id=999,
+            personal_mode=False,
+            response_mode="chat",
+            current_time="09:00 AM on March 24, 2026",
+        )
+
+        self.assertIn("not a licensed therapist", prompt)
+        self.assertIn("Do not follow a rigid 'summary + validate + question' template", prompt)
+        self.assertIn("Current time: 09:00 AM on March 24, 2026", prompt)
+
+    def test_personal_mode_prompt_keeps_boundaries_and_user_context(self):
+        prompt = bot.get_personal_mode_prompt(339651126)
+
+        self.assertIn("DJ/Papzin", prompt)
+        self.assertIn("do not create dependency", prompt.lower())
+        self.assertIn("same safety boundaries", prompt)
+        self.assertNotIn("You ARE qualified to help", prompt)
+
+    def test_voice_prompt_uses_voice_response_rules(self):
+        prompt = bot.build_generation_system_prompt(
+            user_id=339651126,
+            personal_mode=True,
+            response_mode="voice",
+        )
+
+        self.assertIn("Voice Response Mode", prompt)
+        self.assertIn("End cleanly; don't tack on an unnecessary question every time", prompt)
+
+
+class DailyHeartbeatCopyTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        bot.db_manager = InMemoryDatabase()
+        await bot.db_manager.connect()
+        bot.user_journey.clear()
+        bot.daily_journals.clear()
+        bot.daily_summary_tracking.clear()
+
+    async def test_daily_heartbeat_uses_lighter_distinct_checkin_voice(self):
+        user_id = 339651126
+        await bot.append_journal_entry_for_user(
+            user_id=user_id,
+            local_date="2026-03-23",
+            entry_text="I felt tired and stressed after work.",
+            entry_type="daily_heartbeat",
+        )
+
+        message = await bot.build_daily_heartbeat_message(
+            user_id,
+            now=datetime(2026, 3, 24, 7, 0, 0, tzinfo=bot.get_daily_heartbeat_timezone()),
+        )
+
+        self.assertIn("Tiny check-in", message)
+        self.assertIn("Gentle nudge:", message)
+        self.assertIn("If you want, send a quick mood check", message)
+        self.assertNotIn("How are you feeling today?", message)
+        self.assertNotIn("Here's a gentle check-in for today", message)
+
+
 class _FakeCursor:
     def __init__(self, fetchone_results=None):
         self.fetchone_results = list(fetchone_results or [])
