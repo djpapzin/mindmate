@@ -3,7 +3,7 @@ import types
 import unittest
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -22,12 +22,15 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
         bot.daily_journals.clear()
         bot.daily_summary_tracking.clear()
         bot.degraded_mode_notice_sent.clear()
+        bot.processed_messages.clear()
         self.original_daily_heartbeat_enabled = bot.DAILY_HEARTBEAT_ENABLED
         self.original_telegram_app = bot.telegram_app
+        self.original_openai_client = bot.openai_client
 
     async def asyncTearDown(self):
         bot.DAILY_HEARTBEAT_ENABLED = self.original_daily_heartbeat_enabled
         bot.telegram_app = self.original_telegram_app
+        bot.openai_client = self.original_openai_client
 
     async def test_journey_survives_restart_via_active_db_layer(self):
         user_id = 1234
@@ -91,6 +94,76 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(count, 0)
         bot.send_scheduled_daily_summary.assert_not_awaited()
+
+
+    async def test_duplicate_daily_reply_is_not_appended_twice_across_retry_state(self):
+        user_id = 888
+        local_date = "2026-03-24"
+        sent_at = datetime(2026, 3, 24, 7, 0, 0)
+        update = types.SimpleNamespace(
+            message=types.SimpleNamespace(message_id=12345, reply_text=AsyncMock())
+        )
+
+        await bot.set_daily_summary_tracking(
+            user_id,
+            local_date,
+            True,
+            sent_at=sent_at,
+            prompt_message_id=999,
+            status="sent",
+        )
+
+        await bot.handle_daily_summary_response(update, None, user_id, "Today was rough but manageable.")
+        entries = await bot.get_journal_entries_for_date(user_id, local_date)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["metadata"]["source_message_id"], "12345")
+
+        bot.daily_journals.clear()
+        bot.daily_summary_tracking.clear()
+        await bot.set_daily_summary_tracking(
+            user_id,
+            local_date,
+            True,
+            sent_at=sent_at,
+            prompt_message_id=999,
+            status="sent",
+        )
+
+        await bot.handle_daily_summary_response(update, None, user_id, "Today was rough but manageable.")
+        entries = await bot.get_journal_entries_for_date(user_id, local_date)
+        self.assertEqual(len(entries), 1)
+        self.assertIn("Already Saved", update.message.reply_text.await_args_list[-1].args[0])
+
+    async def test_personal_mode_chat_updates_durable_journey_from_normal_messages(self):
+        user_id = 339651126
+        update = types.SimpleNamespace(
+            effective_user=types.SimpleNamespace(id=user_id),
+            message=types.SimpleNamespace(
+                message_id=54321,
+                text="I had a therapy session today and my partner has been really supportive.",
+                date=datetime(2026, 3, 24, 12, 0, 0),
+                reply_text=AsyncMock(),
+            ),
+        )
+        context = types.SimpleNamespace()
+        bot.openai_client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(
+                completions=types.SimpleNamespace(
+                    create=Mock(
+                        return_value=types.SimpleNamespace(
+                            choices=[types.SimpleNamespace(message=types.SimpleNamespace(content="Glad you shared that."))]
+                        )
+                    )
+                )
+            )
+        )
+
+        await bot.handle_message(update, context)
+
+        summary = await bot.get_user_journey_summary(user_id)
+        self.assertIn("Therapy: Currently in therapy", summary)
+        journey = await bot.ensure_user_journey_loaded(user_id)
+        self.assertEqual(journey.get("relationship_status"), "Supportive partner")
 
 
 if __name__ == "__main__":

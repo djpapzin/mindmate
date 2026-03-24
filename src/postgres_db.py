@@ -129,6 +129,7 @@ class PostgresDatabase:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_feedback_user ON mindmate_feedback(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON mindmate_feedback(created_at)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_journal_user_date ON mindmate_journal_entries(user_id, local_date, created_at)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_journal_source_message ON mindmate_journal_entries(user_id, entry_type, ((metadata->>'source_message_id'))) WHERE metadata ? 'source_message_id'")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_checkins_user_updated ON mindmate_daily_checkins(user_id, updated_at DESC)")
 
             conn.commit()
@@ -400,6 +401,56 @@ class PostgresDatabase:
             )
             conn.commit()
             return entry
+        finally:
+            pool.putconn(conn)
+
+    async def get_journal_entry_by_source_message(
+        self,
+        user_id: int,
+        source_message_id: str,
+        local_date: Optional[str] = None,
+        entry_type: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Return a durable journal entry previously tied to a source message id."""
+        pool = self._get_pool()
+        conn = pool.getconn()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        try:
+            params: List[Any] = [user_id, source_message_id]
+            where = ["user_id = %s", "metadata->>'source_message_id' = %s"]
+            if local_date:
+                where.append("local_date = %s::date")
+                params.append(local_date)
+            if entry_type:
+                where.append("entry_type = %s")
+                params.append(entry_type)
+
+            cursor.execute(
+                f"""
+                SELECT local_date, entry_type, entry_text, mood, plan_tomorrow, metadata, created_at
+                FROM mindmate_journal_entries
+                WHERE {' AND '.join(where)}
+                ORDER BY created_at ASC
+                LIMIT 1
+                """,
+                tuple(params),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            item: Dict[str, Any] = {
+                "timestamp": row["created_at"].isoformat(),
+                "entry": row["entry_text"],
+                "type": row["entry_type"],
+                "mood": row["mood"],
+                "plan_tomorrow": row["plan_tomorrow"],
+            }
+            metadata = row.get("metadata") or {}
+            if metadata:
+                item["metadata"] = dict(metadata)
+            return item
         finally:
             pool.putconn(conn)
 
@@ -750,6 +801,24 @@ class InMemoryDatabase:
             entry["metadata"] = dict(metadata)
         self.journal_entries.setdefault(user_id, {}).setdefault(local_date, []).append(entry)
         return dict(entry)
+
+    async def get_journal_entry_by_source_message(
+        self,
+        user_id: int,
+        source_message_id: str,
+        local_date: Optional[str] = None,
+        entry_type: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        candidate_dates = [local_date] if local_date else sorted(self.journal_entries.get(user_id, {}).keys())
+        for day in candidate_dates:
+            for entry in self.journal_entries.get(user_id, {}).get(day, []):
+                metadata = entry.get("metadata") or {}
+                if str(metadata.get("source_message_id")) != str(source_message_id):
+                    continue
+                if entry_type and entry.get("type") != entry_type:
+                    continue
+                return dict(entry)
+        return None
 
     async def get_journal_entries(
         self,

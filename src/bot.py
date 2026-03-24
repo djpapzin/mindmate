@@ -1174,6 +1174,49 @@ async def get_journal_entries_for_date(user_id: int, local_date: str) -> list[di
     return list(daily_journals.get(user_id, {}).get(local_date, []))
 
 
+def _entry_source_message_id(entry: dict | None) -> str | None:
+    metadata = (entry or {}).get("metadata") or {}
+    source_message_id = metadata.get("source_message_id")
+    return str(source_message_id) if source_message_id is not None else None
+
+
+async def get_existing_journal_entry_for_source_message(
+    user_id: int,
+    source_message_id: int | str | None,
+    *,
+    local_date: str | None = None,
+    entry_type: str | None = None,
+) -> dict | None:
+    """Return an existing journal entry tied to a source message id, if any."""
+    if source_message_id is None:
+        return None
+
+    source_message_id_str = str(source_message_id)
+    if db_manager and hasattr(db_manager, "get_journal_entry_by_source_message"):
+        try:
+            existing = await db_manager.get_journal_entry_by_source_message(
+                user_id=user_id,
+                source_message_id=source_message_id_str,
+                local_date=local_date,
+                entry_type=entry_type,
+            )
+            if existing:
+                return existing
+        except Exception as e:
+            logger.warning(
+                f"Failed to look up journal dedupe key for user {user_id} message {source_message_id_str}: {e}"
+            )
+
+    candidate_dates = [local_date] if local_date else list(daily_journals.get(user_id, {}).keys())
+    for candidate_date in candidate_dates:
+        for existing in daily_journals.get(user_id, {}).get(candidate_date, []):
+            if _entry_source_message_id(existing) == source_message_id_str:
+                if entry_type and existing.get("type") != entry_type:
+                    continue
+                return dict(existing)
+    return None
+
+
 async def append_journal_entry_for_user(
     user_id: int,
     local_date: str,
@@ -1182,8 +1225,25 @@ async def append_journal_entry_for_user(
     mood: str | None = None,
     plan_tomorrow: str | None = None,
     metadata: dict | None = None,
-) -> dict:
+    source_message_id: int | str | None = None,
+) -> tuple[dict, bool]:
     """Append a journal entry and persist it when durable storage is available."""
+    entry_metadata = dict(metadata or {})
+    if source_message_id is not None:
+        entry_metadata["source_message_id"] = str(source_message_id)
+
+    existing_entry = await get_existing_journal_entry_for_source_message(
+        user_id,
+        source_message_id,
+        local_date=local_date,
+        entry_type=entry_type,
+    )
+    if existing_entry:
+        cache = daily_journals.setdefault(user_id, {}).setdefault(local_date, [])
+        if not any(_entry_source_message_id(item) == _entry_source_message_id(existing_entry) for item in cache):
+            cache.append(existing_entry)
+        return existing_entry, False
+
     entry = {
         "timestamp": datetime.now().isoformat(),
         "entry": entry_text,
@@ -1191,8 +1251,8 @@ async def append_journal_entry_for_user(
         "mood": mood,
         "plan_tomorrow": plan_tomorrow,
     }
-    if metadata:
-        entry["metadata"] = metadata
+    if entry_metadata:
+        entry["metadata"] = entry_metadata
 
     if db_manager and hasattr(db_manager, "append_journal_entry"):
         try:
@@ -1203,13 +1263,15 @@ async def append_journal_entry_for_user(
                 entry_type=entry_type,
                 mood=mood,
                 plan_tomorrow=plan_tomorrow,
-                metadata=metadata,
+                metadata=entry_metadata,
             )
         except Exception as e:
             logger.warning(f"Failed to persist journal entry for user {user_id}: {e}")
 
-    daily_journals.setdefault(user_id, {}).setdefault(local_date, []).append(entry)
-    return entry
+    cache = daily_journals.setdefault(user_id, {}).setdefault(local_date, [])
+    if source_message_id is None or not any(_entry_source_message_id(item) == str(source_message_id) for item in cache):
+        cache.append(entry)
+    return entry, True
 
 
 async def get_latest_pending_daily_summary_tracking(user_id: int) -> dict | None:
@@ -2123,6 +2185,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await maybe_send_degraded_mode_notice(update, user_id)
 
+    if personal_mode:
+        await update_context_from_message(user_id, message)
+
     # Select system prompt based on mode
     system_prompt = get_personal_mode_prompt(user_id) if personal_mode else SYSTEM_PROMPT
     current_model = get_user_model(user_id)
@@ -2222,12 +2287,17 @@ async def handle_daily_summary_response(update: Update, context: ContextTypes.DE
     tracking = await get_latest_pending_daily_summary_tracking(user_id) or {}
     today = tracking.get("local_date") or datetime.now().strftime("%Y-%m-%d")
 
-    await append_journal_entry_for_user(
+    response_message_id = getattr(update.message, "message_id", None)
+    _, created = await append_journal_entry_for_user(
         user_id=user_id,
         local_date=today,
         entry_text=message,
         entry_type="daily_heartbeat",
-        metadata={"source": "daily_checkin_reply"},
+        metadata={
+            "source": "daily_checkin_reply",
+            "prompt_message_id": tracking.get("message_id"),
+        },
+        source_message_id=response_message_id,
     )
 
     await set_daily_summary_tracking(
@@ -2237,7 +2307,7 @@ async def handle_daily_summary_response(update: Update, context: ContextTypes.DE
         sent_at=datetime.fromisoformat(tracking["sent_time"]) if tracking.get("sent_time") else None,
         responded_at=datetime.now(),
         prompt_message_id=tracking.get("message_id"),
-        response_message_id=getattr(update.message, "message_id", None),
+        response_message_id=response_message_id,
         prompt_kind=tracking.get("kind", "daily_heartbeat"),
         status="completed",
         metadata=tracking.get("metadata"),
@@ -2247,13 +2317,22 @@ async def handle_daily_summary_response(update: Update, context: ContextTypes.DE
     await update_user_journey(user_id, "last_daily_summary", today)
     await update_user_journey(user_id, "journaling_habit", "Active - responds to daily prompts")
     
-    await update.message.reply_text(
-        f"✅ **Check-in Saved!**\n\n"
-        f"Thanks for sharing. I saved this for {today} so I can support you with better continuity.\n\n"
-        f"💡 I'll check in again tomorrow morning, and you can message me anytime before then too. 💙"
-    )
-    
-    logger.info(f"User {user_id} submitted daily summary for {today}")
+    if created:
+        reply_text = (
+            f"✅ **Check-in Saved!**\n\n"
+            f"Thanks for sharing. I saved this for {today} so I can support you with better continuity.\n\n"
+            f"💡 I'll check in again tomorrow morning, and you can message me anytime before then too. 💙"
+        )
+        logger.info(f"User {user_id} submitted daily summary for {today}")
+    else:
+        reply_text = (
+            f"✅ **Check-in Already Saved**\n\n"
+            f"I already recorded this reply for {today}, so I didn't add it twice.\n\n"
+            f"💡 You're all set for today."
+        )
+        logger.info(f"Skipped duplicate daily summary reply for user {user_id} on {today}")
+
+    await update.message.reply_text(reply_text)
 
 
 async def update_context_from_message(user_id: int, message: str) -> None:
