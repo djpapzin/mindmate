@@ -193,8 +193,8 @@ def test_personal_mode_users():
     
     # Personal Mode users (from bot.py)
     PERSONAL_MODE_USERS = {
-        339651126: {"name": "DJ", "model": "gpt-4.1-mini"},
-        7013163582: {"name": "Keleh", "model": "gpt-4.1-mini"}
+        339651126: {"name": "DJ", "model": "gpt-5.4-mini"},
+        7013163582: {"name": "Keleh", "model": "gpt-5.4-mini"}
     }
     
     def is_personal_mode(user_id):

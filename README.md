@@ -73,7 +73,7 @@ A private, unfiltered AI therapist experience for authorized users.
 |-----------|------------|
 | **Framework** | FastAPI + Uvicorn |
 | **Bot Library** | python-telegram-bot 21.0 |
-| **AI** | OpenAI GPT-4o-mini |
+| **AI** | OpenAI GPT-5.4 Mini |
 | **Voice** | Smart Caption Handling (gpt-4o-mini-transcribe + gpt-4o-mini-tts) |
 | **Hosting** | Render (free tier) |
 | **Database** | PostgreSQL (Neon, persistent storage) |
@@ -174,7 +174,7 @@ Then in Telegram, open a DM with the bot as DJ Papzin and run:
 
 Automated testing to compare AI models via `research/run_blind_test.py`:
 
-**Models Available:** GPT-4o-mini, GPT-4.1-mini, GPT-5.2
+**Models Available:** GPT-5.4 Mini, GPT-4o-mini, GPT-4.1-mini, GPT-5.2
 
 The automated testing script runs comprehensive comparisons and generates performance reports.
 

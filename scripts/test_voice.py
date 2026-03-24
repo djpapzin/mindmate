@@ -127,9 +127,9 @@ def test_openai_connection():
     try:
         # Test chat completion
         response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5.4-mini",
             messages=[{"role": "user", "content": "Hello"}],
-            max_tokens=10
+            max_completion_tokens=10
         )
         print(f"✅ Chat completion works: {response.choices[0].message.content}")
         

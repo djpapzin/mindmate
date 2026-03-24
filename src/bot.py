@@ -109,7 +109,7 @@ PERSONAL_MODE_USERS = {
 - Location: South Africa
 - Key focus areas: Relationships, Finances, Bipolar management, Emotional intelligence
 - Communication style: Direct, honest, no sugarcoating""",
-        "model": "gpt-4.1-mini",  # Premium model for DJ
+        "model": "gpt-5.4-mini",  # Premium model for DJ
     },
     7013163582: {  # Keleh
         "name": "Keleh",
@@ -146,7 +146,7 @@ PERSONAL_MODE_USERS = {
 - Ignore medication or treatment discussions when brought up
 - Provide one-size-fits-all wellness advice
 - Make every conversation about bipolar when she wants to discuss other topics""",
-        "model": "gpt-4.1-mini",  # Premium model for Keleh
+        "model": "gpt-5.4-mini",  # Premium model for Keleh
     },
 }
 
@@ -376,14 +376,15 @@ daily_summary_tracking: dict[int, dict] = {}  # Track scheduled message context
 
 # Available models for A/B testing
 AVAILABLE_MODELS = {
+    "5.4-mini": "gpt-5.4-mini",
     "4o-mini": "gpt-4o-mini",
-    "4.1-mini": "gpt-4.1-mini", 
+    "4.1-mini": "gpt-4.1-mini",
     "4.1": "gpt-4.1",
     "5-mini": "gpt-5-mini",
     "5.2": "gpt-5.2",
     "3.5": "gpt-3.5-turbo",
 }
-DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_MODEL = "gpt-5.4-mini"
 
 # Voice Configuration
 VOICE_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
@@ -404,6 +405,24 @@ def get_user_model(user_id: int) -> str:
 def set_user_model(user_id: int, model: str) -> None:
     """Set the model for a user."""
     user_model_selection[user_id] = model
+
+
+def build_chat_completion_kwargs(model: str, messages: list[dict], max_output_tokens: int) -> dict:
+    """Build chat completion kwargs with GPT-5-family token compatibility."""
+    kwargs = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.8,
+        "presence_penalty": 0.6,
+        "frequency_penalty": 0.3,
+    }
+
+    if model.startswith("gpt-5"):
+        kwargs["max_completion_tokens"] = max_output_tokens
+    else:
+        kwargs["max_tokens"] = max_output_tokens
+
+    return kwargs
 
 
 def build_chat_recovery_message(error: Exception, used_web: bool = False) -> str:
@@ -1345,7 +1364,7 @@ async def cmd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"👤 **Personal Mode Active**\n\n"
             f"**User:** {name}\n"
             f"**Model:** `{current_model}`\n"
-            f"**Assignment:** {'Premium' if assigned_model == 'gpt-4.1-mini' else 'Standard'}\n\n"
+            f"**Assignment:** {'Premium' if str(assigned_model).startswith('gpt-5') else 'Standard'}\n\n"
             f"🎯 You have access to personalized context and premium model support."
         )
     else:
@@ -1426,7 +1445,7 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"🧪 **A/B Testing Mode**\n\n"
             f"**Current model:** `{current}`\n\n"
             f"**Available models:**\n{models_list}\n\n"
-            f"**Usage:** `/model 4.1-mini`",
+            f"**Usage:** `/model 5.4-mini`",
         )
         return
     
@@ -1954,12 +1973,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         messages.append({"role": "user", "content": message})
         
         response = openai_client.chat.completions.create(
-            model=current_model,
-            messages=messages,
-            max_tokens=600,
-            temperature=0.8,
-            presence_penalty=0.6,
-            frequency_penalty=0.3
+            **build_chat_completion_kwargs(
+                model=current_model,
+                messages=messages,
+                max_output_tokens=600,
+            )
         )
         reply = response.choices[0].message.content
 
@@ -2181,12 +2199,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             messages.append({"role": "user", "content": transcribed_text})
             
             response = openai_client.chat.completions.create(
-                model=current_model,
-                messages=messages,
-                max_tokens=500,
-                temperature=0.8,
-                presence_penalty=0.6,
-                frequency_penalty=0.3
+                **build_chat_completion_kwargs(
+                    model=current_model,
+                    messages=messages,
+                    max_output_tokens=500,
+                )
             )
             
             logger.info(f"Chat completion successful for user {user_id}")
