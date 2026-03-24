@@ -390,6 +390,40 @@ class PostgresDatabase:
         cursor = conn.cursor()
 
         try:
+            source_message_id = (metadata or {}).get("source_message_id")
+            if source_message_id is not None:
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(%s, hashtext(%s))",
+                    (int(user_id), f"{entry_type}:{source_message_id}"),
+                )
+                cursor.execute(
+                    """
+                    SELECT local_date, entry_type, entry_text, mood, plan_tomorrow, metadata, created_at
+                    FROM mindmate_journal_entries
+                    WHERE user_id = %s
+                      AND local_date = %s::date
+                      AND entry_type = %s
+                      AND metadata->>'source_message_id' = %s
+                    ORDER BY created_at ASC
+                    LIMIT 1
+                    """,
+                    (user_id, local_date, entry_type, str(source_message_id)),
+                )
+                existing_row = cursor.fetchone()
+                if existing_row:
+                    conn.commit()
+                    existing_entry: Dict[str, Any] = {
+                        "timestamp": existing_row[6].isoformat(),
+                        "entry": existing_row[2],
+                        "type": existing_row[1],
+                        "mood": existing_row[3],
+                        "plan_tomorrow": existing_row[4],
+                    }
+                    existing_metadata = existing_row[5] or {}
+                    if existing_metadata:
+                        existing_entry["metadata"] = dict(existing_metadata)
+                    return existing_entry
+
             cursor.execute(
                 """
                 INSERT INTO mindmate_journal_entries (

@@ -2318,18 +2318,32 @@ async def handle_daily_summary_response(update: Update, context: ContextTypes.DE
     await update_user_journey(user_id, "journaling_habit", "Active - responds to daily prompts")
     
     if created:
-        reply_text = (
-            f"✅ **Check-in Saved!**\n\n"
-            f"Thanks for sharing. I saved this for {today} so I can support you with better continuity.\n\n"
-            f"💡 I'll check in again tomorrow morning, and you can message me anytime before then too. 💙"
-        )
+        if is_degraded_memory_mode():
+            reply_text = (
+                f"✅ **Check-in Recorded for Now**\n\n"
+                f"Thanks for sharing. I recorded this for {today} while my memory is in a temporary lighter mode.\n\n"
+                f"⚠️ That means it can help in this session, but it may not survive a restart. If it's important, feel free to send it again later once persistence is back."
+            )
+        else:
+            reply_text = (
+                f"✅ **Check-in Saved!**\n\n"
+                f"Thanks for sharing. I saved this for {today} so I can support you with better continuity.\n\n"
+                f"💡 I'll check in again tomorrow morning, and you can message me anytime before then too. 💙"
+            )
         logger.info(f"User {user_id} submitted daily summary for {today}")
     else:
-        reply_text = (
-            f"✅ **Check-in Already Saved**\n\n"
-            f"I already recorded this reply for {today}, so I didn't add it twice.\n\n"
-            f"💡 You're all set for today."
-        )
+        if is_degraded_memory_mode():
+            reply_text = (
+                f"✅ **Check-in Already Recorded for Now**\n\n"
+                f"I already recorded this reply for {today} in my temporary lighter-memory mode, so I didn't add it twice.\n\n"
+                f"⚠️ Because storage is degraded right now, that temporary record may not survive a restart."
+            )
+        else:
+            reply_text = (
+                f"✅ **Check-in Already Saved**\n\n"
+                f"I already recorded this reply for {today}, so I didn't add it twice.\n\n"
+                f"💡 You're all set for today."
+            )
         logger.info(f"Skipped duplicate daily summary reply for user {user_id} on {today}")
 
     await update.message.reply_text(reply_text)

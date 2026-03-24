@@ -11,7 +11,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 import bot  # noqa: E402
-from postgres_db import InMemoryDatabase  # noqa: E402
+from postgres_db import InMemoryDatabase, PostgresDatabase  # noqa: E402
 
 
 class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
@@ -132,7 +132,31 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
         await bot.handle_daily_summary_response(update, None, user_id, "Today was rough but manageable.")
         entries = await bot.get_journal_entries_for_date(user_id, local_date)
         self.assertEqual(len(entries), 1)
-        self.assertIn("Already Saved", update.message.reply_text.await_args_list[-1].args[0])
+        self.assertIn("didn't add it twice", update.message.reply_text.await_args_list[-1].args[0])
+
+    async def test_daily_reply_in_degraded_mode_is_honest_about_temporary_storage(self):
+        user_id = 889
+        local_date = "2026-03-24"
+        sent_at = datetime(2026, 3, 24, 7, 0, 0)
+        update = types.SimpleNamespace(
+            message=types.SimpleNamespace(message_id=67890, reply_text=AsyncMock())
+        )
+
+        await bot.set_daily_summary_tracking(
+            user_id,
+            local_date,
+            True,
+            sent_at=sent_at,
+            prompt_message_id=1000,
+            status="sent",
+        )
+
+        await bot.handle_daily_summary_response(update, None, user_id, "I got through today.")
+
+        reply_text = update.message.reply_text.await_args_list[-1].args[0]
+        self.assertIn("temporary lighter mode", reply_text)
+        self.assertIn("may not survive a restart", reply_text)
+        self.assertNotIn("better continuity", reply_text)
 
     async def test_personal_mode_chat_updates_durable_journey_from_normal_messages(self):
         user_id = 339651126
@@ -164,6 +188,82 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Therapy: Currently in therapy", summary)
         journey = await bot.ensure_user_journey_loaded(user_id)
         self.assertEqual(journey.get("relationship_status"), "Supportive partner")
+
+
+class _FakeCursor:
+    def __init__(self, fetchone_results=None):
+        self.fetchone_results = list(fetchone_results or [])
+        self.executed = []
+
+    def execute(self, query, params=None):
+        self.executed.append((" ".join(query.split()), params))
+
+    def fetchone(self):
+        if self.fetchone_results:
+            return self.fetchone_results.pop(0)
+        return None
+
+
+class _FakeConnection:
+    def __init__(self, cursor):
+        self._cursor = cursor
+        self.commit_count = 0
+
+    def cursor(self, *args, **kwargs):
+        return self._cursor
+
+    def commit(self):
+        self.commit_count += 1
+
+
+class _FakePool:
+    def __init__(self, conn):
+        self.conn = conn
+        self.put_back_count = 0
+
+    def getconn(self):
+        return self.conn
+
+    def putconn(self, conn):
+        self.put_back_count += 1
+
+
+class PostgresJournalDedupeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_append_journal_entry_uses_advisory_lock_and_reuses_existing_source_message(self):
+        created_at = datetime(2026, 3, 24, 7, 10, 0)
+        existing_row = (
+            "2026-03-24",
+            "daily_heartbeat",
+            "Already stored",
+            None,
+            None,
+            {"source_message_id": "12345", "source": "daily_checkin_reply"},
+            created_at,
+        )
+        cursor = _FakeCursor(fetchone_results=[existing_row])
+        conn = _FakeConnection(cursor)
+        pool = _FakePool(conn)
+
+        db = PostgresDatabase.__new__(PostgresDatabase)
+        db.pool = pool
+        db.prefix = ""
+        db._get_pool = lambda: pool
+
+        entry = await db.append_journal_entry(
+            user_id=42,
+            local_date="2026-03-24",
+            entry_text="Already stored",
+            entry_type="daily_heartbeat",
+            metadata={"source_message_id": "12345", "source": "daily_checkin_reply"},
+            created_at=created_at,
+        )
+
+        self.assertEqual(entry["entry"], "Already stored")
+        self.assertEqual(entry["metadata"]["source_message_id"], "12345")
+        self.assertEqual(conn.commit_count, 1)
+        self.assertEqual(pool.put_back_count, 1)
+        self.assertTrue(any("pg_advisory_xact_lock" in query for query, _ in cursor.executed))
+        self.assertFalse(any("INSERT INTO mindmate_journal_entries" in query for query, _ in cursor.executed))
 
 
 if __name__ == "__main__":
