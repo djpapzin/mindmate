@@ -370,9 +370,22 @@ pending_context: dict[int, dict] = {}
 user_journey: dict[int, dict] = {}
 
 # Daily journaling and scheduling
-daily_journals: dict[int, list[dict]] = {}
+daily_journals: dict[int, dict[str, list[dict]]] = {}
 scheduled_messages: dict[int, list] = {}
 daily_summary_tracking: dict[int, dict] = {}  # Track scheduled message context
+
+DEFAULT_USER_JOURNEY = {
+    "diagnosis_status": "unknown",
+    "medication_status": "unknown",
+    "doctor_visits": "unknown",
+    "therapy_status": "unknown",
+    "family_support": "unknown",
+    "living_situation": "unknown",
+    "last_mood_episode": "unknown",
+    "medication_adherence": "unknown",
+    "crisis_history": [],
+    "progress_notes": [],
+}
 
 # Available models for A/B testing
 AVAILABLE_MODELS = {
@@ -761,8 +774,8 @@ async def build_daily_heartbeat_message(user_id: int, now: datetime | None = Non
     local_now = now.astimezone(tz) if now else datetime.now(tz)
     yesterday = (local_now - timedelta(days=1)).strftime("%Y-%m-%d")
     recent_history = await get_history(user_id)
-    journal_entries = daily_journals.get(user_id, {}).get(yesterday, [])
-    journey = user_journey.get(user_id, {})
+    journal_entries = await get_journal_entries_for_date(user_id, yesterday)
+    journey = await ensure_user_journey_loaded(user_id)
 
     intro = "🌤️ Good morning. Here's a gentle check-in for today."
 
@@ -839,13 +852,15 @@ async def run_daily_heartbeat_cycle(now: datetime | None = None) -> int:
     sent_count = 0
     local_date = local_now.strftime("%Y-%m-%d")
     for user_id in await get_daily_heartbeat_candidate_user_ids():
-        if daily_summary_tracking.get(user_id, {}).get("waiting_for_summary"):
+        pending_tracking = await get_latest_pending_daily_summary_tracking(user_id)
+        if pending_tracking and pending_tracking.get("waiting_for_summary"):
             continue
         if await get_daily_heartbeat_last_sent_date(user_id) == local_date:
             continue
         try:
             await send_scheduled_daily_summary(user_id)
-            if daily_summary_tracking.get(user_id, {}).get("waiting_for_summary"):
+            pending_tracking = await get_latest_pending_daily_summary_tracking(user_id)
+            if pending_tracking and pending_tracking.get("waiting_for_summary"):
                 await mark_daily_heartbeat_sent(user_id, local_date)
                 sent_count += 1
         except Exception as e:
@@ -1075,33 +1090,55 @@ def store_pending_context(user_id: int, file_info: str, description: str) -> Non
         "timestamp": datetime.now().isoformat()
     }
 
-def update_user_journey(user_id: int, key: str, value: str) -> None:
-    """Update user's journey tracking for continuity of care."""
-    if user_id not in user_journey:
-        user_journey[user_id] = {
-            "diagnosis_status": "unknown",
-            "medication_status": "unknown", 
-            "doctor_visits": "unknown",
-            "therapy_status": "unknown",
-            "family_support": "unknown",
-            "living_situation": "unknown",
-            "last_mood_episode": "unknown",
-            "medication_adherence": "unknown",
-            "crisis_history": [],
-            "progress_notes": [],
-            "last_updated": datetime.now().isoformat()
-        }
-    
-    user_journey[user_id][key] = value
-    user_journey[user_id]["last_updated"] = datetime.now().isoformat()
-    logger.info(f"Updated journey for user {user_id}: {key} = {value}")
 
-def get_user_journey_summary(user_id: int) -> str:
+def _default_user_journey() -> dict:
+    journey = dict(DEFAULT_USER_JOURNEY)
+    journey["crisis_history"] = list(DEFAULT_USER_JOURNEY["crisis_history"])
+    journey["progress_notes"] = list(DEFAULT_USER_JOURNEY["progress_notes"])
+    journey["last_updated"] = datetime.now().isoformat()
+    return journey
+
+
+async def ensure_user_journey_loaded(user_id: int) -> dict:
+    """Load the durable journey snapshot into memory when available."""
+    if user_id in user_journey:
+        return user_journey[user_id]
+
+    journey = _default_user_journey()
+    if db_manager and hasattr(db_manager, "get_user_journey"):
+        try:
+            stored = await db_manager.get_user_journey(user_id)
+            if isinstance(stored, dict) and stored:
+                journey.update(stored)
+        except Exception as e:
+            logger.warning(f"Failed to load journey from durable storage for user {user_id}: {e}")
+    user_journey[user_id] = journey
+    return journey
+
+
+async def persist_user_journey(user_id: int) -> None:
+    if not db_manager or not hasattr(db_manager, "save_user_journey"):
+        return
+    try:
+        await db_manager.save_user_journey(user_id, user_journey.get(user_id, _default_user_journey()))
+    except Exception as e:
+        logger.warning(f"Failed to persist journey for user {user_id}: {e}")
+
+
+async def update_user_journey(user_id: int, key: str, value: str) -> None:
+    """Update user's journey tracking for continuity of care."""
+    journey = await ensure_user_journey_loaded(user_id)
+    journey[key] = value
+    journey["last_updated"] = datetime.now().isoformat()
+    logger.info(f"Updated journey for user {user_id}: {key} = {value}")
+    await persist_user_journey(user_id)
+
+async def get_user_journey_summary(user_id: int) -> str:
     """Get formatted summary of user's journey for context."""
-    if user_id not in user_journey:
+    journey = await ensure_user_journey_loaded(user_id)
+    if not journey:
         return "No journey information available."
-    
-    journey = user_journey[user_id]
+
     summary_parts = []
     
     if journey.get("diagnosis_status") != "unknown":
@@ -1123,6 +1160,122 @@ def get_user_journey_summary(user_id: int) -> str:
         summary_parts.append(f"Living situation: {journey['living_situation']}")
 
     return " | ".join(summary_parts) if summary_parts else "Building understanding of your situation..."
+
+
+async def get_journal_entries_for_date(user_id: int, local_date: str) -> list[dict]:
+    """Load durable journal entries for a local date, with in-memory fallback."""
+    if db_manager and hasattr(db_manager, "get_journal_entries"):
+        try:
+            entries = await db_manager.get_journal_entries(user_id, local_date=local_date)
+            daily_journals.setdefault(user_id, {})[local_date] = list(entries)
+            return list(entries)
+        except Exception as e:
+            logger.warning(f"Failed to load journal entries for user {user_id} on {local_date}: {e}")
+    return list(daily_journals.get(user_id, {}).get(local_date, []))
+
+
+async def append_journal_entry_for_user(
+    user_id: int,
+    local_date: str,
+    entry_text: str,
+    entry_type: str = "journal",
+    mood: str | None = None,
+    plan_tomorrow: str | None = None,
+    metadata: dict | None = None,
+) -> dict:
+    """Append a journal entry and persist it when durable storage is available."""
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "entry": entry_text,
+        "type": entry_type,
+        "mood": mood,
+        "plan_tomorrow": plan_tomorrow,
+    }
+    if metadata:
+        entry["metadata"] = metadata
+
+    if db_manager and hasattr(db_manager, "append_journal_entry"):
+        try:
+            entry = await db_manager.append_journal_entry(
+                user_id=user_id,
+                local_date=local_date,
+                entry_text=entry_text,
+                entry_type=entry_type,
+                mood=mood,
+                plan_tomorrow=plan_tomorrow,
+                metadata=metadata,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to persist journal entry for user {user_id}: {e}")
+
+    daily_journals.setdefault(user_id, {}).setdefault(local_date, []).append(entry)
+    return entry
+
+
+async def get_latest_pending_daily_summary_tracking(user_id: int) -> dict | None:
+    """Load the latest pending daily-summary tracking state, including after restart."""
+    cached = daily_summary_tracking.get(user_id)
+    if cached and cached.get("waiting_for_summary"):
+        return cached
+
+    if db_manager and hasattr(db_manager, "get_latest_pending_daily_checkin"):
+        try:
+            tracked = await db_manager.get_latest_pending_daily_checkin(user_id)
+            if tracked:
+                daily_summary_tracking[user_id] = tracked
+                return tracked
+        except Exception as e:
+            logger.warning(f"Failed to load pending daily summary tracking for user {user_id}: {e}")
+    return cached
+
+
+async def set_daily_summary_tracking(
+    user_id: int,
+    local_date: str,
+    waiting_for_summary: bool,
+    *,
+    sent_at: datetime | None = None,
+    responded_at: datetime | None = None,
+    prompt_message_id: int | str | None = None,
+    response_message_id: int | str | None = None,
+    prompt_kind: str = "daily_heartbeat",
+    status: str | None = None,
+    metadata: dict | None = None,
+) -> dict:
+    tracking = {
+        "local_date": local_date,
+        "waiting_for_summary": waiting_for_summary,
+        "sent_time": sent_at.isoformat() if sent_at else None,
+        "responded_at": responded_at.isoformat() if responded_at else None,
+        "message_id": str(prompt_message_id) if prompt_message_id is not None else None,
+        "response_message_id": str(response_message_id) if response_message_id is not None else None,
+        "kind": prompt_kind,
+        "status": status or ("completed" if responded_at else "sent" if waiting_for_summary else "dismissed"),
+    }
+    if metadata:
+        tracking["metadata"] = metadata
+
+    if db_manager and hasattr(db_manager, "upsert_daily_checkin"):
+        try:
+            persisted = await db_manager.upsert_daily_checkin(
+                user_id=user_id,
+                local_date=local_date,
+                waiting_for_summary=waiting_for_summary,
+                sent_at=sent_at,
+                responded_at=responded_at,
+                prompt_message_id=prompt_message_id,
+                response_message_id=response_message_id,
+                prompt_kind=prompt_kind,
+                status=status,
+                metadata=metadata,
+            )
+            tracking.update(persisted)
+        except Exception as e:
+            logger.warning(f"Failed to persist daily check-in tracking for user {user_id}: {e}")
+
+    daily_summary_tracking[user_id] = tracking
+    return tracking
+
 
 async def add_to_history(user_id: int, role: str, content: str) -> None:
     """Add a message to PostgreSQL, with in-memory fallback if needed."""
@@ -1491,7 +1644,7 @@ async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await add_to_history(user_id, "system", f"IMPORTANT USER CONTEXT: {context_text}")
         
         # Also update journey tracking with structured context
-        update_context_from_message(user_id, context_text)
+        await update_context_from_message(user_id, context_text)
         
         await send_markdown_message(update,
             f"🧠 **Got it!** I'll remember this for our conversations.\n\n"
@@ -1500,7 +1653,7 @@ async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         logger.info(f"User {user_id} remembered: {context_text}")
     else:
         # Show current context and explain auto-learning
-        current_context = get_user_journey_summary(user_id)
+        current_context = await get_user_journey_summary(user_id)
         
         await send_markdown_message(update,
             f"🧠 **Share important information to remember:**\n\n"
@@ -1532,30 +1685,48 @@ async def cmd_forget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         # Try to match and remove specific journey entries
         removed_items = []
         
+        journey = await ensure_user_journey_loaded(user_id)
+        journey_keys_to_remove = []
+
         if any(word in forget_text for word in ["medication", "meds", "medicine"]):
-            if "medication_status" in user_journey.get(user_id, {}):
-                del user_journey[user_id]["medication_status"]
+            if "medication_status" in journey:
+                journey.pop("medication_status", None)
+                journey_keys_to_remove.append("medication_status")
                 removed_items.append("medication status")
-        
+
         if any(word in forget_text for word in ["therapy", "therapist", "counselor"]):
-            if "therapy_status" in user_journey.get(user_id, {}):
-                del user_journey[user_id]["therapy_status"]
+            if "therapy_status" in journey:
+                journey.pop("therapy_status", None)
+                journey_keys_to_remove.append("therapy_status")
                 removed_items.append("therapy status")
-        
+
         if any(word in forget_text for word in ["diagnosis", "condition", "bipolar"]):
-            if "diagnosis_status" in user_journey.get(user_id, {}):
-                del user_journey[user_id]["diagnosis_status"]
+            if "diagnosis_status" in journey:
+                journey.pop("diagnosis_status", None)
+                journey_keys_to_remove.append("diagnosis_status")
                 removed_items.append("diagnosis status")
-        
+
         if any(word in forget_text for word in ["relationship", "partner", "boyfriend", "girlfriend"]):
-            if "relationship_status" in user_journey.get(user_id, {}):
-                del user_journey[user_id]["relationship_status"]
+            if "relationship_status" in journey:
+                journey.pop("relationship_status", None)
+                journey_keys_to_remove.append("relationship_status")
                 removed_items.append("relationship status")
-        
+
         if any(word in forget_text for word in ["work", "job", "career"]):
-            if "career_status" in user_journey.get(user_id, {}):
-                del user_journey[user_id]["career_status"]
+            if "career_status" in journey:
+                journey.pop("career_status", None)
+                journey_keys_to_remove.append("career_status")
                 removed_items.append("career status")
+
+        if journey_keys_to_remove:
+            journey["last_updated"] = datetime.now().isoformat()
+            if db_manager and hasattr(db_manager, "delete_user_journey_keys"):
+                try:
+                    await db_manager.delete_user_journey_keys(user_id, journey_keys_to_remove)
+                except Exception as e:
+                    logger.warning(f"Failed to delete journey keys for user {user_id}: {e}")
+            else:
+                await persist_user_journey(user_id)
         
         if removed_items:
             await update.message.reply_text(
@@ -1606,7 +1777,7 @@ async def cmd_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await add_to_history(user_id, "system", f"USER FILE: {file_info}\n\n{description}")
     
     # Update journey tracking with file insights
-    update_context_from_message(user_id, f"Uploaded file: {description[:200]}")
+    await update_context_from_message(user_id, f"Uploaded file: {description[:200]}")
     
     # Clear pending file/context
     del pending_context[user_id]
@@ -1660,7 +1831,7 @@ async def cmd_journey(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     
     # Get journey summary
-    journey_summary = get_user_journey_summary(user_id)
+    journey_summary = await get_user_journey_summary(user_id)
     
     if not journey_summary or "No journey information" in journey_summary:
         await update.message.reply_text(
@@ -1696,7 +1867,7 @@ async def cmd_journal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     
     # Check if user has journal entries
     today = datetime.now().strftime("%Y-%m-%d")
-    user_journals_today = daily_journals.get(user_id, {}).get(today, [])
+    user_journals_today = await get_journal_entries_for_date(user_id, today)
     
     if user_journals_today:
         await update.message.reply_text(
@@ -1750,14 +1921,16 @@ async def cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "⏰ The live bot context isn't ready yet. Please try again in a moment."
             )
             return
-        if daily_summary_tracking.get(user_id, {}).get("waiting_for_summary"):
+        pending_tracking = await get_latest_pending_daily_summary_tracking(user_id)
+        if pending_tracking and pending_tracking.get("waiting_for_summary"):
             await update.message.reply_text(
                 "⏰ You've already got an active check-in waiting for a reply, so I didn't send another one."
             )
             return
 
         await send_scheduled_daily_summary(user_id)
-        if daily_summary_tracking.get(user_id, {}).get("waiting_for_summary"):
+        pending_tracking = await get_latest_pending_daily_summary_tracking(user_id)
+        if pending_tracking and pending_tracking.get("waiting_for_summary"):
             await update.message.reply_text(
                 "🧪 Sent a live test check-in from inside the running bot. This won't mark today's scheduled send as completed."
             )
@@ -1783,7 +1956,8 @@ async def cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await set_daily_heartbeat_enabled_for_user(user_id, False)
 
     enabled_for_user = await is_daily_heartbeat_enabled_for_user(user_id)
-    last_summary = user_journey.get(user_id, {}).get('last_daily_summary', 'No recent summaries')
+    journey = await ensure_user_journey_loaded(user_id)
+    last_summary = journey.get('last_daily_summary', 'No recent summaries')
     timezone_name = get_daily_heartbeat_timezone().key
     rollout_note = "Limited rollout (default on)" if rollout_limited else "Default on"
     scheduler_status = "enabled" if DAILY_HEARTBEAT_ENABLED else "disabled"
@@ -1923,8 +2097,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
 
     # Check if this is a reply to a scheduled daily summary message
-    if user_id in daily_summary_tracking and daily_summary_tracking[user_id].get("waiting_for_summary"):
-        # This is a reply to our 6pm daily summary request
+    pending_tracking = await get_latest_pending_daily_summary_tracking(user_id)
+    if pending_tracking and pending_tracking.get("waiting_for_summary"):
+        # This is a reply to our daily summary request, including after restart.
         await handle_daily_summary_response(update, context, user_id, message)
         return
     
@@ -2020,8 +2195,19 @@ async def handle_daily_summary_response(update: Update, context: ContextTypes.DE
     
     if any(keyword in message_lower for keyword in postpone_keywords):
         # User wants to postpone
-        daily_summary_tracking[user_id]["waiting_for_summary"] = False
-        
+        tracking = await get_latest_pending_daily_summary_tracking(user_id) or {}
+        local_date = tracking.get("local_date") or datetime.now().strftime("%Y-%m-%d")
+        await set_daily_summary_tracking(
+            user_id,
+            local_date,
+            False,
+            sent_at=datetime.fromisoformat(tracking["sent_time"]) if tracking.get("sent_time") else None,
+            prompt_message_id=tracking.get("message_id"),
+            prompt_kind=tracking.get("kind", "daily_heartbeat"),
+            status="dismissed",
+            metadata=tracking.get("metadata"),
+        )
+
         await update.message.reply_text(
             f"👍 **No problem!** I understand you're busy right now.\n\n"
             f"💡 Just send me your check-in whenever you're ready, or I'll check in again tomorrow morning.\n\n"
@@ -2029,34 +2215,37 @@ async def handle_daily_summary_response(update: Update, context: ContextTypes.DE
         )
         
         # Update journey tracking
-        update_user_journey(user_id, "journaling_pattern", "Sometimes busy, flexible schedule")
+        await update_user_journey(user_id, "journaling_pattern", "Sometimes busy, flexible schedule")
         return
     
     # This looks like a daily heartbeat reply - save it as a journal check-in
-    today = datetime.now().strftime("%Y-%m-%d")
-    
-    # Initialize user's journal if not exists
-    if user_id not in daily_journals:
-        daily_journals[user_id] = {}
-    
-    if today not in daily_journals[user_id]:
-        daily_journals[user_id][today] = []
-    
-    # Add the summary as today's main entry
-    daily_journals[user_id][today].append({
-        "timestamp": datetime.now().isoformat(),
-        "entry": message,
-        "type": "daily_heartbeat",
-        "mood": None,  # Will be analyzed from content
-        "plan_tomorrow": None  # Will be extracted from content
-    })
-    
-    # Clear the waiting flag
-    daily_summary_tracking[user_id]["waiting_for_summary"] = False
-    
+    tracking = await get_latest_pending_daily_summary_tracking(user_id) or {}
+    today = tracking.get("local_date") or datetime.now().strftime("%Y-%m-%d")
+
+    await append_journal_entry_for_user(
+        user_id=user_id,
+        local_date=today,
+        entry_text=message,
+        entry_type="daily_heartbeat",
+        metadata={"source": "daily_checkin_reply"},
+    )
+
+    await set_daily_summary_tracking(
+        user_id,
+        today,
+        False,
+        sent_at=datetime.fromisoformat(tracking["sent_time"]) if tracking.get("sent_time") else None,
+        responded_at=datetime.now(),
+        prompt_message_id=tracking.get("message_id"),
+        response_message_id=getattr(update.message, "message_id", None),
+        prompt_kind=tracking.get("kind", "daily_heartbeat"),
+        status="completed",
+        metadata=tracking.get("metadata"),
+    )
+
     # Update journey tracking
-    update_user_journey(user_id, "last_daily_summary", today)
-    update_user_journey(user_id, "journaling_habit", "Active - responds to daily prompts")
+    await update_user_journey(user_id, "last_daily_summary", today)
+    await update_user_journey(user_id, "journaling_habit", "Active - responds to daily prompts")
     
     await update.message.reply_text(
         f"✅ **Check-in Saved!**\n\n"
@@ -2067,7 +2256,7 @@ async def handle_daily_summary_response(update: Update, context: ContextTypes.DE
     logger.info(f"User {user_id} submitted daily summary for {today}")
 
 
-def update_context_from_message(user_id: int, message: str) -> None:
+async def update_context_from_message(user_id: int, message: str) -> None:
     """Automatically update user journey based on conversation content.
     
     This function uses simple keyword matching to detect important information in natural conversation.
@@ -2078,46 +2267,46 @@ def update_context_from_message(user_id: int, message: str) -> None:
     # Medication mentions - scan for medication-related keywords
     if any(word in message_lower for word in ["medication", "meds", "medicine", "pill", "prescription", "dose", "lithium", "seroquel", "lamictal"]):
         if "take" in message_lower or "on" in message_lower or "start" in message_lower:
-            update_user_journey(user_id, "medication_status", "Currently taking medication")
+            await update_user_journey(user_id, "medication_status", "Currently taking medication")
         elif "stop" in message_lower or "quit" in message_lower or "off" in message_lower:
-            update_user_journey(user_id, "medication_status", "Stopped medication")
+            await update_user_journey(user_id, "medication_status", "Stopped medication")
         elif "miss" in message_lower or "forget" in message_lower:
-            update_user_journey(user_id, "medication_adherence", "Sometimes misses doses")
+            await update_user_journey(user_id, "medication_adherence", "Sometimes misses doses")
     
     # Doctor/therapy mentions - scan for treatment-related keywords
     if any(word in message_lower for word in ["doctor", "therapist", "psychiatrist", "counselor", "appointment", "session"]):
         if "appointment" in message_lower or "visit" in message_lower or "see" in message_lower:
-            update_user_journey(user_id, "doctor_visits", "Recent doctor visit")
+            await update_user_journey(user_id, "doctor_visits", "Recent doctor visit")
         elif "therapy" in message_lower or "counseling" in message_lower:
-            update_user_journey(user_id, "therapy_status", "Currently in therapy")
+            await update_user_journey(user_id, "therapy_status", "Currently in therapy")
     
     # Mood/episode mentions - scan for bipolar-related keywords
     if any(word in message_lower for word in ["depressed", "depression", "manic", "mania", "episode", "mood swing", "hypomanic"]):
         if "last week" in message_lower or "recently" in message_lower:
-            update_user_journey(user_id, "last_mood_episode", "Recent mood episode")
+            await update_user_journey(user_id, "last_mood_episode", "Recent mood episode")
     
     # Support system mentions - scan for family/social keywords
     if any(word in message_lower for word in ["family", "sister", "brother", "mom", "dad", "support", "alone", "isolated"]):
         if "help" in message_lower or "support" in message_lower:
-            update_user_journey(user_id, "family_support", "Has family support")
+            await update_user_journey(user_id, "family_support", "Has family support")
         elif "no support" in message_lower or "alone" in message_lower or "isolated" in message_lower:
-            update_user_journey(user_id, "family_support", "Limited family support")
+            await update_user_journey(user_id, "family_support", "Limited family support")
     
     # Living situation mentions - scan for housing keywords
     if any(word in message_lower for word in ["live alone", "living by myself", "roommate", "apartment", "house", "moved"]):
-        update_user_journey(user_id, "living_situation", "Living independently")
+        await update_user_journey(user_id, "living_situation", "Living independently")
     
     # Work/career mentions - scan for job-related keywords
     if any(word in message_lower for word in ["work", "job", "career", "boss", "coworker", "unemployed", "fired"]):
         if "stress" in message_lower or "overwhelmed" in message_lower:
-            update_user_journey(user_id, "career_status", "Work stress affecting mental health")
+            await update_user_journey(user_id, "career_status", "Work stress affecting mental health")
     
     # Relationship mentions - scan for relationship keywords
     if any(word in message_lower for word in ["boyfriend", "girlfriend", "partner", "relationship", "dating", "breakup", "friend"]):
         if "fight" in message_lower or "argument" in message_lower:
-            update_user_journey(user_id, "relationship_status", "Relationship conflicts")
+            await update_user_journey(user_id, "relationship_status", "Relationship conflicts")
         elif "supportive" in message_lower or "understanding" in message_lower:
-            update_user_journey(user_id, "relationship_status", "Supportive partner")
+            await update_user_journey(user_id, "relationship_status", "Supportive partner")
     
     logger.info(f"Auto-updated context for user {user_id} from message: {message[:50]}...")
 
@@ -2125,26 +2314,45 @@ def update_context_from_message(user_id: int, message: str) -> None:
 async def send_scheduled_daily_summary(user_id: int) -> None:
     """Send the once-daily proactive MindMate check-in and track the reply."""
 
-    if user_id not in daily_summary_tracking:
-        daily_summary_tracking[user_id] = {}
-
-    daily_summary_tracking[user_id] = {
-        "waiting_for_summary": True,
-        "sent_time": datetime.now().isoformat(),
-        "message_id": None,
-        "kind": "daily_heartbeat",
-    }
+    sent_at = datetime.now()
+    local_date = sent_at.astimezone(get_daily_heartbeat_timezone()).strftime("%Y-%m-%d")
+    tracking = await set_daily_summary_tracking(
+        user_id,
+        local_date,
+        True,
+        sent_at=sent_at,
+        prompt_kind="daily_heartbeat",
+        status="sent",
+    )
 
     try:
         heartbeat_text = await build_daily_heartbeat_message(user_id)
         message = await telegram_app.bot.send_message(chat_id=user_id, text=heartbeat_text)
 
-        daily_summary_tracking[user_id]["message_id"] = message.message_id
+        await set_daily_summary_tracking(
+            user_id,
+            local_date,
+            True,
+            sent_at=sent_at,
+            prompt_message_id=message.message_id,
+            prompt_kind="daily_heartbeat",
+            status="sent",
+            metadata=tracking.get("metadata"),
+        )
         logger.info("Sent daily heartbeat check-in to user %s via direct message", user_id)
 
     except Exception as e:
         logger.error(f"Failed to send daily heartbeat to user {user_id}: {e}")
-        daily_summary_tracking[user_id]["waiting_for_summary"] = False
+        await set_daily_summary_tracking(
+            user_id,
+            local_date,
+            False,
+            sent_at=sent_at,
+            prompt_message_id=tracking.get("message_id"),
+            prompt_kind="daily_heartbeat",
+            status="failed",
+            metadata={"error": str(e)},
+        )
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
