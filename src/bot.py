@@ -408,19 +408,26 @@ def set_user_model(user_id: int, model: str) -> None:
 
 
 def build_chat_completion_kwargs(model: str, messages: list[dict], max_output_tokens: int) -> dict:
-    """Build chat completion kwargs with GPT-5-family token compatibility."""
+    """Build chat completion kwargs with GPT-5-family compatibility.
+
+    GPT-5-family chat models are stricter about accepted parameters, so keep
+    their payload minimal and only switch token field compatibility there.
+    Older chat models preserve the existing sampling/penalty behavior.
+    """
     kwargs = {
         "model": model,
         "messages": messages,
-        "temperature": 0.8,
-        "presence_penalty": 0.6,
-        "frequency_penalty": 0.3,
     }
 
     if model.startswith("gpt-5"):
         kwargs["max_completion_tokens"] = max_output_tokens
     else:
-        kwargs["max_tokens"] = max_output_tokens
+        kwargs.update({
+            "max_tokens": max_output_tokens,
+            "temperature": 0.8,
+            "presence_penalty": 0.6,
+            "frequency_penalty": 0.3,
+        })
 
     return kwargs
 

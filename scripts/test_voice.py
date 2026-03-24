@@ -12,8 +12,14 @@ import tempfile
 from unittest.mock import Mock, AsyncMock
 from pathlib import Path
 
-# Add src directory to path
-sys.path.append(str(Path(__file__).parent / "src"))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = PROJECT_ROOT / "src"
+
+# Make repo-root and src imports work when running `python scripts/test_voice.py`
+for path in (PROJECT_ROOT, SRC_DIR):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
 
 from bot import (
     handle_voice, 
