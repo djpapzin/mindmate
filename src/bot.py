@@ -86,7 +86,6 @@ DAILY_HEARTBEAT_WINDOW_MINUTES = max(1, int(os.getenv("DAILY_HEARTBEAT_WINDOW_MI
 DAILY_HEARTBEAT_POLL_SECONDS = max(30, int(os.getenv("DAILY_HEARTBEAT_POLL_SECONDS", "60")))
 DAILY_HEARTBEAT_TIMEZONE = os.getenv("DAILY_HEARTBEAT_TIMEZONE", "Africa/Johannesburg").strip() or "Africa/Johannesburg"
 DAILY_HEARTBEAT_CHAT_ID = os.getenv("DAILY_HEARTBEAT_CHAT_ID", "").strip()
-DAILY_HEARTBEAT_CHAT_USERNAME = os.getenv("DAILY_HEARTBEAT_CHAT_USERNAME", "").strip()
 DAILY_HEARTBEAT_MESSAGE_THREAD_ID = os.getenv("DAILY_HEARTBEAT_MESSAGE_THREAD_ID", "").strip()
 DAILY_HEARTBEAT_ALLOWED_USER_IDS = {
     int(token.strip())
@@ -2476,26 +2475,17 @@ async def send_scheduled_daily_summary(user_id: int) -> None:
     try:
         heartbeat_text = await build_daily_heartbeat_message(user_id)
 
-        send_kwargs = {"text": heartbeat_text, "disable_notification": False}
+        send_kwargs = {"text": heartbeat_text, "disable_notification": False, "chat_id": user_id}
         delivery_target = "telegram-user-direct"
         delivery_chat_id = user_id
 
-        if DAILY_HEARTBEAT_CHAT_USERNAME:
-            send_kwargs["chat_id"] = DAILY_HEARTBEAT_CHAT_USERNAME
-            delivery_target = "telegram-configured-username"
-            delivery_chat_id = DAILY_HEARTBEAT_CHAT_USERNAME
-            if DAILY_HEARTBEAT_MESSAGE_THREAD_ID.isdigit():
-                send_kwargs["message_thread_id"] = int(DAILY_HEARTBEAT_MESSAGE_THREAD_ID)
-                delivery_target = "telegram-configured-username-thread"
-        elif DAILY_HEARTBEAT_CHAT_ID:
+        if DAILY_HEARTBEAT_CHAT_ID:
             send_kwargs["chat_id"] = DAILY_HEARTBEAT_CHAT_ID
             delivery_target = "telegram-configured-chat"
             delivery_chat_id = DAILY_HEARTBEAT_CHAT_ID
             if DAILY_HEARTBEAT_MESSAGE_THREAD_ID.isdigit():
                 send_kwargs["message_thread_id"] = int(DAILY_HEARTBEAT_MESSAGE_THREAD_ID)
                 delivery_target = "telegram-configured-chat-thread"
-        else:
-            send_kwargs["chat_id"] = user_id
 
         message = await telegram_app.bot.send_message(**send_kwargs)
 
