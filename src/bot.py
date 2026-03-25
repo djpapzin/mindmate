@@ -85,6 +85,9 @@ DAILY_HEARTBEAT_HOUR = int(os.getenv("DAILY_HEARTBEAT_HOUR", "7"))
 DAILY_HEARTBEAT_WINDOW_MINUTES = max(1, int(os.getenv("DAILY_HEARTBEAT_WINDOW_MINUTES", "15")))
 DAILY_HEARTBEAT_POLL_SECONDS = max(30, int(os.getenv("DAILY_HEARTBEAT_POLL_SECONDS", "60")))
 DAILY_HEARTBEAT_TIMEZONE = os.getenv("DAILY_HEARTBEAT_TIMEZONE", "Africa/Johannesburg").strip() or "Africa/Johannesburg"
+DAILY_HEARTBEAT_CHAT_ID = os.getenv("DAILY_HEARTBEAT_CHAT_ID", "").strip()
+DAILY_HEARTBEAT_CHAT_USERNAME = os.getenv("DAILY_HEARTBEAT_CHAT_USERNAME", "").strip()
+DAILY_HEARTBEAT_MESSAGE_THREAD_ID = os.getenv("DAILY_HEARTBEAT_MESSAGE_THREAD_ID", "").strip()
 DAILY_HEARTBEAT_ALLOWED_USER_IDS = {
     int(token.strip())
     for token in os.getenv("DAILY_HEARTBEAT_ALLOWED_USER_IDS", "").split(",")
@@ -997,6 +1000,7 @@ async def lifespan(app: FastAPI):
         # Register handlers
         telegram_app.add_handler(CommandHandler("start", cmd_start))
         telegram_app.add_handler(CommandHandler("help", cmd_help))
+        telegram_app.add_handler(CommandHandler("chatid", cmd_chatid))
         telegram_app.add_handler(CommandHandler("clear", cmd_clear))
         telegram_app.add_handler(CommandHandler("mode", cmd_mode))
         telegram_app.add_handler(CommandHandler("votd", cmd_votd))
@@ -1596,6 +1600,21 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await send_markdown_message(update, HELP_MESSAGE)
+
+
+async def cmd_chatid(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show the current chat ID and thread ID, if available."""
+    chat = update.effective_chat
+    message = update.effective_message
+    chat_id = chat.id if chat else "unknown"
+    chat_type = chat.type if chat else "unknown"
+    thread_id = getattr(message, "message_thread_id", None)
+
+    reply = f"🧭 **Chat ID**\n\n`{chat_id}`\n\n**Type:** `{chat_type}`"
+    if thread_id is not None:
+        reply += f"\n**Thread:** `{thread_id}`"
+
+    await send_markdown_message(update, reply)
 
 
 async def cmd_votd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2456,7 +2475,29 @@ async def send_scheduled_daily_summary(user_id: int) -> None:
 
     try:
         heartbeat_text = await build_daily_heartbeat_message(user_id)
-        message = await telegram_app.bot.send_message(chat_id=user_id, text=heartbeat_text)
+
+        send_kwargs = {"text": heartbeat_text, "disable_notification": False}
+        delivery_target = "telegram-user-direct"
+        delivery_chat_id = user_id
+
+        if DAILY_HEARTBEAT_CHAT_USERNAME:
+            send_kwargs["chat_id"] = DAILY_HEARTBEAT_CHAT_USERNAME
+            delivery_target = "telegram-configured-username"
+            delivery_chat_id = DAILY_HEARTBEAT_CHAT_USERNAME
+            if DAILY_HEARTBEAT_MESSAGE_THREAD_ID.isdigit():
+                send_kwargs["message_thread_id"] = int(DAILY_HEARTBEAT_MESSAGE_THREAD_ID)
+                delivery_target = "telegram-configured-username-thread"
+        elif DAILY_HEARTBEAT_CHAT_ID:
+            send_kwargs["chat_id"] = DAILY_HEARTBEAT_CHAT_ID
+            delivery_target = "telegram-configured-chat"
+            delivery_chat_id = DAILY_HEARTBEAT_CHAT_ID
+            if DAILY_HEARTBEAT_MESSAGE_THREAD_ID.isdigit():
+                send_kwargs["message_thread_id"] = int(DAILY_HEARTBEAT_MESSAGE_THREAD_ID)
+                delivery_target = "telegram-configured-chat-thread"
+        else:
+            send_kwargs["chat_id"] = user_id
+
+        message = await telegram_app.bot.send_message(**send_kwargs)
 
         await set_daily_summary_tracking(
             user_id,
@@ -2466,9 +2507,14 @@ async def send_scheduled_daily_summary(user_id: int) -> None:
             prompt_message_id=message.message_id,
             prompt_kind="daily_heartbeat",
             status="sent",
-            metadata=tracking.get("metadata"),
+            metadata={
+                **(tracking.get("metadata") or {}),
+                "delivery_target": delivery_target,
+                "delivery_chat_id": delivery_chat_id,
+                "delivery_thread_id": int(DAILY_HEARTBEAT_MESSAGE_THREAD_ID) if DAILY_HEARTBEAT_MESSAGE_THREAD_ID.isdigit() else None,
+            },
         )
-        logger.info("Sent daily heartbeat check-in to user %s via direct message", user_id)
+        logger.info("Sent daily heartbeat check-in to user %s via %s", user_id, delivery_target)
 
     except Exception as e:
         logger.error(f"Failed to send daily heartbeat to user {user_id}: {e}")
