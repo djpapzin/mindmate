@@ -2459,7 +2459,7 @@ async def update_context_from_message(user_id: int, message: str) -> None:
 
 
 async def send_scheduled_daily_summary(user_id: int) -> None:
-    """Send the once-daily proactive MindMate check-in and track the reply."""
+    """Send the once-daily proactive MindMate verse + check-in flow and track the reply."""
 
     sent_at = datetime.now()
     local_date = sent_at.astimezone(get_daily_heartbeat_timezone()).strftime("%Y-%m-%d")
@@ -2473,11 +2473,9 @@ async def send_scheduled_daily_summary(user_id: int) -> None:
     )
 
     try:
-        heartbeat_text = await build_daily_heartbeat_message(user_id)
-
-        send_kwargs = {"text": heartbeat_text, "disable_notification": False, "chat_id": user_id}
         delivery_target = "telegram-user-direct"
         delivery_chat_id = user_id
+        send_kwargs = {"disable_notification": False, "chat_id": user_id}
 
         if DAILY_HEARTBEAT_CHAT_ID:
             send_kwargs["chat_id"] = DAILY_HEARTBEAT_CHAT_ID
@@ -2487,7 +2485,30 @@ async def send_scheduled_daily_summary(user_id: int) -> None:
                 send_kwargs["message_thread_id"] = int(DAILY_HEARTBEAT_MESSAGE_THREAD_ID)
                 delivery_target = "telegram-configured-chat-thread"
 
-        message = await telegram_app.bot.send_message(**send_kwargs)
+        verse = None
+        try:
+            verse = await get_verse_of_the_day()
+        except Exception as verse_error:
+            logger.warning("Failed to fetch Verse of the Day for scheduled heartbeat user %s: %s", user_id, verse_error)
+
+        verse_message = None
+        if verse:
+            verse_text = format_votd_message(
+                verse_text=verse.text,
+                reference=verse.reference,
+                version=verse.version,
+                link=verse.link,
+            )
+            verse_message = await telegram_app.bot.send_message(text=verse_text, **send_kwargs)
+
+        heartbeat_text = await build_daily_heartbeat_message(user_id)
+        if verse:
+            heartbeat_text = (
+                f"{heartbeat_text}\n\n"
+                f"📖 Today\'s verse thread to carry with you: {verse.reference} — \"{verse.text}\""
+            )
+
+        message = await telegram_app.bot.send_message(text=heartbeat_text, **send_kwargs)
 
         await set_daily_summary_tracking(
             user_id,
@@ -2502,9 +2523,11 @@ async def send_scheduled_daily_summary(user_id: int) -> None:
                 "delivery_target": delivery_target,
                 "delivery_chat_id": delivery_chat_id,
                 "delivery_thread_id": int(DAILY_HEARTBEAT_MESSAGE_THREAD_ID) if DAILY_HEARTBEAT_MESSAGE_THREAD_ID.isdigit() else None,
+                "verse_message_id": verse_message.message_id if verse_message else None,
+                "verse_reference": verse.reference if verse else None,
             },
         )
-        logger.info("Sent daily heartbeat check-in to user %s via %s", user_id, delivery_target)
+        logger.info("Sent daily verse/check-in flow to user %s via %s", user_id, delivery_target)
 
     except Exception as e:
         logger.error(f"Failed to send daily heartbeat to user {user_id}: {e}")
