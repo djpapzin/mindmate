@@ -1692,7 +1692,9 @@ async def cmd_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await send_markdown_message(update,
             "📝 **Share feedback anytime**\n\n"
             "Use `/feedback <what helped or what felt off>`\n"
-            "Example: `/feedback The reminder tone felt supportive, but the reply was too long.`"
+            "Examples:\n"
+            "• `/feedback The reminder tone felt supportive, but the reply was too long.`\n"
+            "• `/feedback The fallback message felt vague.`"
         )
         return
 
@@ -1719,13 +1721,13 @@ async def cmd_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     if not saved:
         await send_markdown_message(update,
-            "📝 Thanks — I couldn't save that note permanently just now, but the feedback command is live and can be retried later."
+            "📝 Thanks — I couldn't save that note permanently right now, but the command is live and you can resend it later."
         )
         return
 
     if session_only:
         await send_markdown_message(update,
-            "📝 Thanks — I saved that feedback for this session, but my longer-term memory is temporarily limited right now."
+            "📝 Thanks — I saved that feedback for this session. My longer-term memory is temporarily limited, so please resend important notes later if you want them kept."
         )
     else:
         await send_markdown_message(update,
