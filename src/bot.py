@@ -537,18 +537,13 @@ def build_chat_recovery_message(error: Exception, used_web: bool = False) -> str
 
 
 def format_votd_message(verse_text: str, reference: str, version: str | None = None, link: str | None = None) -> str:
-    """Render a short, mobile-friendly Verse of the Day message."""
+    """Render a clean, mobile-friendly Verse of the Day message."""
     version_suffix = f" ({version})" if version else ""
-    message = (
-        "📖 **Verse of the Day**\n\n"
+    return (
+        "📖 **Today's Verse**\n\n"
         f'“{verse_text}”\n\n'
-        f"**{reference}**{version_suffix}"
+        f"— **{reference}**{version_suffix}"
     )
-
-    if link:
-        message += f"\n🔗 {link}"
-
-    return message
 
 
 async def send_votd_unavailable(update: Update) -> None:
@@ -819,7 +814,7 @@ def _select_heartbeat_context_messages(messages: list[str], limit: int = 3) -> l
     return []
 
 
-async def build_daily_heartbeat_message(user_id: int, now: datetime | None = None) -> str:
+async def build_daily_heartbeat_message(user_id: int, now: datetime | None = None, verse = None) -> str:
     """Build a lightweight morning companion briefing from recent context."""
     tz = get_daily_heartbeat_timezone()
     local_now = now.astimezone(tz) if now else datetime.now(tz)
@@ -878,13 +873,32 @@ async def build_daily_heartbeat_message(user_id: int, now: datetime | None = Non
             "pick one realistic win for today instead of chasing ten things at once",
         ])
 
-    suggestions_text = "; then maybe " .join(plan_suggestions[:2])
+    suggestions_text = "; then maybe ".join(plan_suggestions[:2])
     plan_line = f"🎯 Gentle nudge: {suggestions_text}."
+    reflection_line = None
+    if verse:
+        verse_themes = []
+        verse_text_lower = (verse.text or "").lower()
+        if any(token in verse_text_lower for token in ["trust", "strength", "victory", "help", "fear", "peace", "rest"]):
+            verse_themes.append("today doesn't have to be carried by pressure alone")
+        if any(token in combined_context for token in ["stress", "overwhelmed", "anxious", "panic"]):
+            verse_themes.append("it fits the way your mind has been carrying a lot lately")
+        if any(token in combined_context for token in ["family", "relationship", "partner", "friend"]):
+            verse_themes.append("it also lands in the middle of the relationship weight you've been holding")
+        if any(token in combined_context for token in ["work", "job", "career"]):
+            verse_themes.append("it speaks into the pressure to force outcomes by yourself")
+        if not verse_themes:
+            verse_themes.append("it feels like a quiet reminder that you don't have to grip the whole day so tightly")
+
+        reflection_line = "🫶 The verse feels relevant today because " + "; ".join(verse_themes[:2]) + "."
+
     reply_line = "💬 If you want, send a quick mood check, a sentence about yesterday, or the one thing that feels heaviest today."
 
     lines = [intro]
     if yesterday_line:
         lines.append(yesterday_line)
+    if reflection_line:
+        lines.append(reflection_line)
     lines.append(plan_line)
     lines.append(reply_line)
     return "\n\n".join(lines)
@@ -2501,12 +2515,7 @@ async def send_scheduled_daily_summary(user_id: int) -> None:
             )
             verse_message = await telegram_app.bot.send_message(text=verse_text, **send_kwargs)
 
-        heartbeat_text = await build_daily_heartbeat_message(user_id)
-        if verse:
-            heartbeat_text = (
-                f"{heartbeat_text}\n\n"
-                f"📖 Today\'s verse thread to carry with you: {verse.reference} — \"{verse.text}\""
-            )
+        heartbeat_text = await build_daily_heartbeat_message(user_id, verse=verse)
 
         message = await telegram_app.bot.send_message(text=heartbeat_text, **send_kwargs)
 
