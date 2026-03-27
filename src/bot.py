@@ -566,8 +566,8 @@ async def maybe_send_degraded_mode_notice(update: Update, user_id: int) -> None:
 
     degraded_mode_notice_sent.add(user_id)
     await update.message.reply_text(
-        "🟡 Quick heads-up: I'm still here for the conversation, but my long-term memory is in a lighter mode right now.\n\n"
-        "I may not reliably remember this chat after a restart, so repeat anything important later or use /feedback if you want to flag something for review."
+        "🟡 Quick heads-up: I'm still chatting normally, but my long-term memory is running in a lighter fallback mode right now.\n\n"
+        "That means I may miss some past context after a restart. If something matters, send it again or use /feedback so I can keep track of it."
     )
 
 
