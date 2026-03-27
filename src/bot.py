@@ -2513,7 +2513,11 @@ async def send_scheduled_daily_summary(user_id: int) -> None:
                 version=verse.version,
                 link=verse.link,
             )
-            verse_message = await telegram_app.bot.send_message(text=verse_text, **send_kwargs)
+            verse_message = await telegram_app.bot.send_message(
+                text=_render_basic_telegram_html(verse_text),
+                parse_mode='HTML',
+                **send_kwargs,
+            )
 
         heartbeat_text = await build_daily_heartbeat_message(user_id, verse=verse)
 
