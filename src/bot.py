@@ -503,36 +503,36 @@ def build_chat_recovery_message(error: Exception, used_web: bool = False) -> str
 
     if status_code == 429 or "ratelimit" in error_name or "rate_limit" in error_name:
         message = (
-            "💙 I'm getting more requests than usual right now, so my reply engine needs a moment. "
-            "Please try again in about a minute."
+            "💙 I'm a bit overloaded right now, so I couldn't finish that properly. "
+            "Try again in about a minute."
         )
     elif status_code and status_code >= 500:
         message = (
-            "💙 My reply engine hit a temporary server problem just now. "
-            "Please try again in a moment."
+            "💙 My reply system hit a temporary server issue just now. "
+            "Give me another try in a moment."
         )
     elif "timeout" in error_name:
         message = (
-            "💙 My reply took too long to come back just now. "
-            "Please try again, or send the key part in a shorter message."
+            "💙 I took too long to answer that one. "
+            "Try again, or send the main part in a shorter message."
         )
     elif "connection" in error_name or "apierror" in error_name:
         message = (
-            "💙 I lost connection to my reply engine for a moment. "
+            "💙 I lost connection while putting that reply together. "
             "Please try again shortly."
         )
     else:
         message = (
-            "💙 I hit a temporary problem while preparing that reply. "
+            "💙 Something temporary went wrong while I was putting that reply together. "
             "Please try again."
         )
 
     if used_web:
-        message += " If needed, resend it without `web:` and I'll answer without live web lookup."
+        message += " If you want, resend it without `web:` and I'll answer without live web lookup."
     else:
-        message += " If it keeps happening, resend the main part in one shorter message."
+        message += " If it keeps happening, send the core part in one shorter message."
 
-    message += " You can also use /feedback to flag it for review."
+    message += " If the fallback itself feels off, use /feedback and tell me what felt wrong."
     return message
 
 
