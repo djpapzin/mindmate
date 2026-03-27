@@ -503,17 +503,17 @@ def build_chat_recovery_message(error: Exception, used_web: bool = False) -> str
 
     if status_code == 429 or "ratelimit" in error_name or "rate_limit" in error_name:
         message = (
-            "💙 I'm a bit overloaded right now, so I couldn't finish that properly. "
+            "💙 I'm a bit overloaded right now, so I couldn't finish that reply cleanly. "
             "Try again in about a minute."
         )
     elif status_code and status_code >= 500:
         message = (
             "💙 My reply system hit a temporary server issue just now. "
-            "Give me another try in a moment."
+            "Please try again in a moment."
         )
     elif "timeout" in error_name:
         message = (
-            "💙 I took too long to answer that one. "
+            "💙 That reply took too long to come back. "
             "Try again, or send the main part in a shorter message."
         )
     elif "connection" in error_name or "apierror" in error_name:
@@ -532,7 +532,7 @@ def build_chat_recovery_message(error: Exception, used_web: bool = False) -> str
     else:
         message += " If it keeps happening, send the core part in one shorter message."
 
-    message += " If the fallback itself feels off, use /feedback and tell me what felt wrong."
+    message += " If the fallback still feels off, use /feedback and tell me what felt wrong."
     return message
 
 
