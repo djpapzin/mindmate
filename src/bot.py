@@ -193,6 +193,43 @@ async def safe_set_bot_commands(telegram_app: Application, commands: list) -> bo
         )
     return False
 
+
+async def safe_start_telegram_app(telegram_app: Application, commands: list) -> bool:
+    """Start Telegram without letting auth/bootstrap issues take down FastAPI startup."""
+    await safe_set_bot_commands(telegram_app, commands)
+    try:
+        await telegram_app.initialize()
+        await telegram_app.start()
+
+        # Set up webhook if configured
+        if USE_WEBHOOK:
+            webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
+            logger.info(f"[{INSTANCE_ID}] Setting up webhook: {webhook_url}")
+            await telegram_app.bot.delete_webhook(drop_pending_updates=True)
+            await telegram_app.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES)
+            logger.info(f"[{INSTANCE_ID}] ✅ Webhook set successfully!")
+        else:
+            logger.info(f"[{INSTANCE_ID}] Starting polling mode...")
+            await telegram_app.updater.start_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+
+        logger.info(f"[{INSTANCE_ID}] ✅ Bot is running!")
+        return True
+    except TelegramError as exc:
+        logger.warning(
+            "[%s] Telegram startup failed; continuing without Telegram integration: %s",
+            INSTANCE_ID,
+            exc,
+            exc_info=True,
+        )
+    except Exception as exc:
+        logger.warning(
+            "[%s] Unexpected Telegram startup failure; continuing without Telegram integration: %s",
+            INSTANCE_ID,
+            exc,
+            exc_info=True,
+        )
+    return False
+
 # =============================================================================
 # Constants
 # =============================================================================
@@ -1008,12 +1045,12 @@ async def lifespan(app: FastAPI):
     
     # Initialize and start the Telegram bot
     logger.info(f"[{INSTANCE_ID}] Starting MindMate Bot...")
-    
+
     if not TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not configured!")
     else:
-        telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-        
+        telegram_runtime = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
         # Set bot commands menu for better UX
         from telegram import BotCommand
         commands = [
@@ -1023,60 +1060,54 @@ async def lifespan(app: FastAPI):
             BotCommand("clear", "🧹 Clear history"),
             BotCommand("votd", "📖 Get today's Bible verse"),
             BotCommand("model", "🧪 Switch AI model"),
+            BotCommand("summary", "📋 Show a quick memory summary"),
+            BotCommand("mood", "📈 Log a mood check-in"),
+            BotCommand("heartbeat", "🫀 Show heartbeat pulse"),
             BotCommand("schedule", "⏰ Manage daily check-ins"),
             BotCommand("feedback", "📝 Share quick feedback"),
         ]
-        
-        # Set bot commands for better UX; never fail startup if Telegram is rate-limited or rejects the token.
-        await safe_set_bot_commands(telegram_app, commands)
-        
-        # Register handlers
-        telegram_app.add_handler(CommandHandler("start", cmd_start))
-        telegram_app.add_handler(CommandHandler("help", cmd_help))
-        telegram_app.add_handler(CommandHandler("chatid", cmd_chatid))
-        telegram_app.add_handler(CommandHandler("clear", cmd_clear))
-        telegram_app.add_handler(CommandHandler("mode", cmd_mode))
-        telegram_app.add_handler(CommandHandler("votd", cmd_votd))
-        telegram_app.add_handler(CommandHandler("model", cmd_model))
-        telegram_app.add_handler(CommandHandler("feedback", cmd_feedback))
-        telegram_app.add_handler(CommandHandler("context", cmd_context))
-        telegram_app.add_handler(CommandHandler("remember", cmd_remember))
-        telegram_app.add_handler(CommandHandler("forget", cmd_forget))
-        telegram_app.add_handler(CommandHandler("confirm", cmd_confirm))
-        telegram_app.add_handler(CommandHandler("decline", cmd_decline))
-        telegram_app.add_handler(CommandHandler("journey", cmd_journey))
-        telegram_app.add_handler(CommandHandler("journal", cmd_journal))
-        telegram_app.add_handler(CommandHandler("schedule", cmd_schedule))
-        telegram_app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
-        telegram_app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image_document))
-        telegram_app.add_handler(MessageHandler(filters.Document.PDF | filters.Document.TEXT, handle_document))
-        telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-        telegram_app.add_error_handler(error_handler)
-        
-        await telegram_app.initialize()
-        await telegram_app.start()
-        
-        # Set up webhook if configured
-        if USE_WEBHOOK:
-            webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
-            logger.info(f"[{INSTANCE_ID}] Setting up webhook: {webhook_url}")
-            await telegram_app.bot.delete_webhook(drop_pending_updates=True)
-            await telegram_app.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES)
-            logger.info(f"[{INSTANCE_ID}] ✅ Webhook set successfully!")
-        else:
-            logger.info(f"[{INSTANCE_ID}] Starting polling mode...")
-            await telegram_app.updater.start_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
-        if DAILY_HEARTBEAT_ENABLED:
-            daily_heartbeat_task = asyncio.create_task(daily_heartbeat_scheduler_loop(), name="mindmate-daily-heartbeat")
-            logger.info(f"[{INSTANCE_ID}] ✅ Daily heartbeat scheduler started")
+        # Register handlers before attempting Telegram startup.
+        telegram_runtime.add_handler(CommandHandler("start", cmd_start))
+        telegram_runtime.add_handler(CommandHandler("help", cmd_help))
+        telegram_runtime.add_handler(CommandHandler("chatid", cmd_chatid))
+        telegram_runtime.add_handler(CommandHandler("clear", cmd_clear))
+        telegram_runtime.add_handler(CommandHandler("mode", cmd_mode))
+        telegram_runtime.add_handler(CommandHandler("votd", cmd_votd))
+        telegram_runtime.add_handler(CommandHandler("model", cmd_model))
+        telegram_runtime.add_handler(CommandHandler("feedback", cmd_feedback))
+        telegram_runtime.add_handler(CommandHandler("context", cmd_context))
+        telegram_runtime.add_handler(CommandHandler("remember", cmd_remember))
+        telegram_runtime.add_handler(CommandHandler("forget", cmd_forget))
+        telegram_runtime.add_handler(CommandHandler("confirm", cmd_confirm))
+        telegram_runtime.add_handler(CommandHandler("decline", cmd_decline))
+        telegram_runtime.add_handler(CommandHandler("journey", cmd_journey))
+        telegram_runtime.add_handler(CommandHandler("journal", cmd_journal))
+        telegram_runtime.add_handler(CommandHandler("import_journal", cmd_import_journal))
+        telegram_runtime.add_handler(CommandHandler("summary", cmd_summary))
+        telegram_runtime.add_handler(CommandHandler("mood", cmd_mood))
+        telegram_runtime.add_handler(CommandHandler("heartbeat", cmd_heartbeat))
+        telegram_runtime.add_handler(CommandHandler("schedule", cmd_schedule))
+        telegram_runtime.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
+        telegram_runtime.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image_document))
+        telegram_runtime.add_handler(MessageHandler(filters.Document.PDF | filters.Document.TEXT, handle_document))
+        telegram_runtime.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        telegram_runtime.add_error_handler(error_handler)
+
+        telegram_started = await safe_start_telegram_app(telegram_runtime, commands)
+        if telegram_started:
+            telegram_app = telegram_runtime
+            if DAILY_HEARTBEAT_ENABLED:
+                daily_heartbeat_task = asyncio.create_task(daily_heartbeat_scheduler_loop(), name="mindmate-daily-heartbeat")
+                logger.info(f"[{INSTANCE_ID}] ✅ Daily heartbeat scheduler started")
+            else:
+                logger.info(f"[{INSTANCE_ID}] Daily heartbeat scheduler disabled via env")
+            logger.info(f"[{INSTANCE_ID}] ✅ Bot is running!")
         else:
-            logger.info(f"[{INSTANCE_ID}] Daily heartbeat scheduler disabled via env")
-        
-        logger.info(f"[{INSTANCE_ID}] ✅ Bot is running!")
-    
+            telegram_app = None
+
     yield  # App is running
-    
+
     if daily_heartbeat_task:
         daily_heartbeat_task.cancel()
         try:
@@ -1084,12 +1115,12 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         daily_heartbeat_task = None
-    
+
     # Shutdown: Close database and stop the bot
     if db_manager:
         logger.info(f"[{INSTANCE_ID}] Closing database connection...")
         await db_manager.close()
-    
+
     if telegram_app:
         logger.info(f"[{INSTANCE_ID}] Shutting down bot...")
         if telegram_app.updater.running:
