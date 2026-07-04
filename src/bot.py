@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from openai import OpenAI, OpenAIError
 from telegram import Update
+from telegram.error import TelegramError
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import uvicorn
 
@@ -169,6 +170,28 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
+
+
+async def safe_set_bot_commands(telegram_app: Application, commands: list) -> bool:
+    """Set Telegram bot commands without letting transient API failures crash startup."""
+    try:
+        await telegram_app.bot.set_my_commands(commands)
+        return True
+    except TelegramError as exc:
+        logger.warning(
+            "[%s] Unable to set Telegram bot commands; continuing startup: %s",
+            INSTANCE_ID,
+            exc,
+            exc_info=True,
+        )
+    except Exception as exc:
+        logger.warning(
+            "[%s] Unexpected error while setting Telegram bot commands; continuing startup: %s",
+            INSTANCE_ID,
+            exc,
+            exc_info=True,
+        )
+    return False
 
 # =============================================================================
 # Constants
@@ -1004,11 +1027,8 @@ async def lifespan(app: FastAPI):
             BotCommand("feedback", "📝 Share quick feedback"),
         ]
         
-        async def set_commands():
-            await telegram_app.bot.set_my_commands(commands)
-        
-        # Set bot commands for better UX
-        await set_commands()
+        # Set bot commands for better UX; never fail startup if Telegram is rate-limited or rejects the token.
+        await safe_set_bot_commands(telegram_app, commands)
         
         # Register handlers
         telegram_app.add_handler(CommandHandler("start", cmd_start))
