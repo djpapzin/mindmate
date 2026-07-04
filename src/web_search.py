@@ -141,9 +141,18 @@ def search_web(query: str, max_results: int = 5) -> str:
         lines.append(line)
         lines.append("")
 
-    lines.append(
-        "Use these results as up-to-date context. "
-        "If they don't fully answer the question, say so and reason carefully."
-    )
-
     return "\n".join(lines)
+
+
+def build_web_attribution_line(web_search_result: str) -> str:
+    """Build a short source line for replies that used web search."""
+    if not web_search_result:
+        return ""
+
+    first_line = web_search_result.splitlines()[0].strip()
+    if first_line.startswith("Web search results for:"):
+        return f"Source: {first_line}"
+
+    return "Source: web search"
+
+

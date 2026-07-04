@@ -289,6 +289,55 @@ class _FakePool:
         self.put_back_count += 1
 
 
+class TelegramCommandRegistrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_safe_set_bot_commands_logs_and_continues_on_telegram_error(self):
+        fake_app = types.SimpleNamespace(
+            bot=types.SimpleNamespace(
+                set_my_commands=AsyncMock(side_effect=bot.TelegramError("Unauthorized"))
+            )
+        )
+        warning_logger = Mock()
+        original_logger = bot.logger
+        bot.logger = types.SimpleNamespace(warning=warning_logger)
+
+        try:
+            result = await bot.safe_set_bot_commands(fake_app, [])
+        finally:
+            bot.logger = original_logger
+
+        self.assertFalse(result)
+        warning_logger.assert_called_once()
+        self.assertIn("Unable to set Telegram bot commands", warning_logger.call_args.args[0])
+
+    async def test_safe_start_telegram_app_keeps_initialize_failures_nonfatal(self):
+        fake_app = types.SimpleNamespace(
+            bot=types.SimpleNamespace(
+                set_my_commands=AsyncMock(return_value=None),
+                delete_webhook=AsyncMock(return_value=None),
+                set_webhook=AsyncMock(return_value=None),
+            ),
+            updater=types.SimpleNamespace(start_polling=AsyncMock(return_value=None)),
+            initialize=AsyncMock(side_effect=bot.TelegramError("InvalidToken")),
+            start=AsyncMock(return_value=None),
+        )
+        warning_logger = Mock()
+        original_logger = bot.logger
+        bot.logger = types.SimpleNamespace(warning=warning_logger, info=Mock())
+
+        try:
+            result = await bot.safe_start_telegram_app(fake_app, [])
+        finally:
+            bot.logger = original_logger
+
+        self.assertFalse(result)
+        fake_app.bot.set_my_commands.assert_awaited_once()
+        fake_app.initialize.assert_awaited_once()
+        fake_app.start.assert_not_awaited()
+        fake_app.updater.start_polling.assert_not_awaited()
+        warning_logger.assert_called_once()
+        self.assertIn("Telegram startup failed; continuing without Telegram integration", warning_logger.call_args.args[0])
+
+
 class PostgresJournalDedupeTests(unittest.IsolatedAsyncioTestCase):
     async def test_append_journal_entry_uses_advisory_lock_and_reuses_existing_source_message(self):
         created_at = datetime(2026, 3, 24, 7, 10, 0)
