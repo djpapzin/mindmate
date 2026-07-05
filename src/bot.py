@@ -2088,6 +2088,59 @@ async def cmd_journal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
 
 
+async def cmd_import_journal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Backward-compatible alias for /journal so startup doesn't fail on missing handler."""
+    await cmd_journal(update, context)
+
+
+async def cmd_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show a compact memory/journey summary."""
+    user_id = update.effective_user.id
+    if is_personal_mode(user_id):
+        summary = await get_user_journey_summary(user_id)
+        await send_markdown_message(update, f"📋 **Journey Summary**\n\n{summary}")
+        return
+
+    history = await get_history(user_id)
+    await update.message.reply_text(
+        f"📋 You currently have {len(history)} message(s) in conversation history."
+    )
+
+
+async def cmd_mood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log a quick mood check-in."""
+    user_id = update.effective_user.id
+    if not is_personal_mode(user_id):
+        await send_markdown_message(update, "This feature is only available in Personal Mode.")
+        return
+
+    mood_text = " ".join(context.args).strip() if context.args else ""
+    if mood_text:
+        await update_user_journey(user_id, "last_mood_checkin", mood_text)
+        await send_markdown_message(update, f"📈 **Mood check-in saved:** {mood_text}")
+    else:
+        journey = await ensure_user_journey_loaded(user_id)
+        existing = journey.get("last_mood_checkin", "No recent mood check-in recorded")
+        await send_markdown_message(update, f"📈 **Mood check-in**\n\nLatest: {existing}")
+
+
+async def cmd_heartbeat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show the daily heartbeat scheduler status."""
+    user_id = update.effective_user.id
+    enabled_for_user = await is_daily_heartbeat_enabled_for_user(user_id)
+    timezone_name = get_daily_heartbeat_timezone().key
+    status = "enabled" if DAILY_HEARTBEAT_ENABLED else "disabled"
+    user_status = "on" if enabled_for_user else "off"
+    await send_markdown_message(
+        update,
+        f"🫀 **Heartbeat Status**\n\n"
+        f"Scheduler: **{status}**\n"
+        f"Your reminder: **{user_status}**\n"
+        f"Time: **{DAILY_HEARTBEAT_HOUR:02d}:00 {timezone_name}**\n"
+        f"Delivery: **direct message from MindMate**"
+    )
+
+
 async def cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manage the env-gated daily journaling reminder MVP."""
     user_id = update.effective_user.id
