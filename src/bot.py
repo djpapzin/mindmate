@@ -76,8 +76,17 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=True)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
+MINDMATE_OPENROUTER_API_KEY = os.getenv("MINDMATE_OPENROUTER_API_KEY")
+MINDMATE_OPENROUTER_CHAT_MODEL = os.getenv("MINDMATE_OPENROUTER_CHAT_MODEL", "qwen/qwen3.7-plus")
+openai_client = None
+openrouter_client = (
+    OpenAI(
+        api_key=MINDMATE_OPENROUTER_API_KEY,
+        base_url="https://openrouter.ai/api/v1",
+    )
+    if MINDMATE_OPENROUTER_API_KEY
+    else None
+)
 PORT = int(os.getenv("PORT", 10000))
 MAX_HISTORY_LENGTH = 10
 AUTO_WEB_SEARCH_ENABLED = os.getenv("AUTO_WEB_SEARCH_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
@@ -485,7 +494,7 @@ db_manager: PostgresDatabase = None
 # In-memory fallback used only when PostgreSQL is unavailable at startup or runtime.
 conversation_history: dict[int, list[dict[str, str]]] = {}
 user_model_selection: dict[int, str] = {}  # Track model per user for A/B testing
-openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+openai_client = None
 bot_running = False
 degraded_mode_notice_sent: set[int] = set()
 
@@ -583,6 +592,21 @@ def build_chat_completion_kwargs(model: str, messages: list[dict], max_output_to
         })
 
     return kwargs
+
+
+def create_chat_completion(messages: list[dict], model: str, max_output_tokens: int):
+    """Create a chat completion via OpenRouter."""
+    if openrouter_client is None:
+        raise RuntimeError("OpenRouter is not configured")
+
+    response = openrouter_client.chat.completions.create(
+        **build_chat_completion_kwargs(MINDMATE_OPENROUTER_CHAT_MODEL, messages, max_output_tokens)
+    )
+    logger.info(
+        "Chat completion successful via openrouter using %s",
+        MINDMATE_OPENROUTER_CHAT_MODEL,
+    )
+    return response, "openrouter", MINDMATE_OPENROUTER_CHAT_MODEL
 
 
 def is_quota_exhausted_openai_error(error: Exception) -> bool:
@@ -2454,7 +2478,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await send_markdown_message(update, CRISIS_RESPONSE)
             return
     
-    if not openai_client:
+    if not openrouter_client:
         await update.message.reply_text("I'm temporarily unavailable. Please try again later.")
         return
 
@@ -2481,12 +2505,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         messages.extend(history)
         messages.append({"role": "user", "content": message})
         
-        response = openai_client.chat.completions.create(
-            **build_chat_completion_kwargs(
-                model=current_model,
-                messages=messages,
-                max_output_tokens=600,
-            )
+        response, provider_name, provider_model = create_chat_completion(
+            messages=messages,
+            model=current_model,
+            max_output_tokens=600,
         )
         reply = response.choices[0].message.content
 
@@ -2761,135 +2783,21 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     personal_mode = is_personal_mode(user_id)
     
     try:
-        # Check OpenAI client availability
+        # Voice transcription/TTS currently requires OpenAI and is disabled in this deployment.
         if not openai_client:
-            logger.error(f"OpenAI client not initialized for user {user_id}")
+            logger.info(f"Voice handling disabled for user {user_id} because no OpenAI client is configured")
             await update.message.reply_text(
-                "❌ Voice service is temporarily unavailable. Please try again later.",
+                "🎙️ Voice messages are temporarily unavailable here. Please send text instead.",
             )
             return
-        
-        # Get voice file
-        voice = update.message.voice or update.message.audio
-        if not voice:
-            await update.message.reply_text("❌ Please send a voice message.")
-            return
-        
-        # Download voice file
-        voice_file = await context.bot.get_file(voice.file_id)
-        
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp_file:
-            await voice_file.download_to_drive(temp_file.name)
-            
-            # Transcribe voice to text
-            from openai import AsyncOpenAI
-            async_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-            
-            with open(temp_file.name, "rb") as audio_file:
-                transcript = await async_client.audio.transcriptions.create(
-                    model=VOICE_TRANSCRIPTION_MODEL,
-                    file=audio_file
-                )
-            
-            transcribed_text = transcript.text
-            logger.info(f"User {user_id} voice transcribed: {transcribed_text[:50]}...")
-            
-            # Add detailed logging for debugging
-            logger.info(f"OpenAI client status: {openai_client is not None}")
-            logger.info(f"Transcription successful: {transcribed_text[:100]}...")
-            
-            # Add transcription to history
-            await add_to_history(user_id, "user", transcribed_text)
-            
-            # Get conversation history
-            history = await get_history(user_id)
-            
-            # Generate response
-            current_model = get_user_model(user_id)
-            current_time = update.message.date.strftime("%I:%M %p on %B %d, %Y") if update.message and update.message.date else None
-            system_prompt = build_generation_system_prompt(
-                user_id,
-                personal_mode=personal_mode,
-                response_mode="voice",
-                current_time=current_time,
-            )
 
-            messages = [{"role": "system", "content": system_prompt}]
-            messages.extend(history)
-            messages.append({"role": "user", "content": transcribed_text})
-            
-            response = openai_client.chat.completions.create(
-                **build_chat_completion_kwargs(
-                    model=current_model,
-                    messages=messages,
-                    max_output_tokens=500,
-                )
-            )
-            
-            logger.info(f"Chat completion successful for user {user_id}")
-            
-            response_text = response.choices[0].message.content
-            logger.info(f"Response text extracted: {response_text[:100]}...")
-            
-            # Validate response before proceeding
-            if not response_text:
-                logger.error(f"Empty response from OpenAI for user {user_id}")
-                await update.message.reply_text(
-                    "❌ I didn't get a proper response. Please try again.",
-                )
-                return
-            
-            # Add response to history
-            await add_to_history(user_id, "assistant", response_text)
-            
-            # Generate voice response
-            logger.info(f"About to create TTS for user {user_id}")
-            voice_response = openai_client.audio.speech.create(
-                model=VOICE_TTS_MODEL,
-                input=response_text,
-                voice="alloy"
-            )
-            
-            logger.info(f"TTS creation successful for user {user_id}")
-            
-            # Validate voice response
-            if not voice_response:
-                logger.error(f"Failed to generate voice response for user {user_id}")
-                await update.message.reply_text(
-                    f"💬 **Text Response:**\n\n{response_text}",
-                )
-                return
-            
-            # Create temporary file for TTS response
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as voice_file:
-                # Run synchronous stream_to_file in executor to avoid blocking
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, voice_response.stream_to_file, voice_file.name)
-                
-                # Check if response fits in Telegram caption limit (800 chars leaves room for formatting)
-                if len(response_text) <= 800:
-                    # Normal flow - voice with full caption
-                    caption_text = f"🎤 **Voice Response:**\n\n{response_text}"
-                    await update.message.reply_voice(
-                        voice=voice_file,
-                        caption=caption_text,
-                    )
-                else:
-                    # Response too long - send voice + split text messages
-                    await update.message.reply_voice(
-                        voice=voice_file,
-                        caption="🎤 **Full response below:**",
-                    )
-                    
-                    # Split long text into multiple messages (Telegram limit: 4096 chars)
-                    for i in range(0, len(response_text), 4096):
-                        await update.message.reply_text(response_text[i:i+4096])
-            
-            logger.info(f"Voice response sent to user {user_id}")
-            
-    except OpenAIError as e:
-        logger.error(f"OpenAI error processing voice for user {user_id}: {e}")
+        await update.message.reply_text(
+            "🎙️ Voice messages are temporarily unavailable here. Please send text instead.",
+        )
+        return
+
+    except Exception as e:
+        logger.error(f"Voice handling error for user {user_id}: {e}")
         await update.message.reply_text(
             "❌ Voice processing failed. Please try again.",
         )
@@ -2926,7 +2834,10 @@ async def handle_image_document(update: Update, context: ContextTypes.DEFAULT_TY
             
             # Analyze content for bipolar relevance
             if is_photo:
-                relevance_result = await analyze_image_relevance(temp_file.name, openai_client)
+                await update.message.reply_text(
+                    "🖼️ Image analysis is temporarily unavailable in this no-OpenAI deployment."
+                )
+                return
             else:
                 relevance_result = await analyze_document_relevance(temp_file.name, document.file_name)
             
@@ -3084,9 +2995,9 @@ def main():
     if not TELEGRAM_BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN not set!")
         return
-    if not OPENAI_API_KEY:
-        logger.warning("⚠️ OPENAI_API_KEY not set")
-    
+    if openrouter_client is None:
+        logger.warning("⚠️ MINDMATE_OPENROUTER_API_KEY not set; chat replies may fail")
+
     # Run FastAPI with Uvicorn
     uvicorn.run(
         fastapi_app,

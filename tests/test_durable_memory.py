@@ -26,11 +26,13 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
         self.original_daily_heartbeat_enabled = bot.DAILY_HEARTBEAT_ENABLED
         self.original_telegram_app = bot.telegram_app
         self.original_openai_client = bot.openai_client
+        self.original_openrouter_client = bot.openrouter_client
 
     async def asyncTearDown(self):
         bot.DAILY_HEARTBEAT_ENABLED = self.original_daily_heartbeat_enabled
         bot.telegram_app = self.original_telegram_app
         bot.openai_client = self.original_openai_client
+        bot.openrouter_client = self.original_openrouter_client
 
     async def test_journey_survives_restart_via_active_db_layer(self):
         user_id = 1234
@@ -170,7 +172,7 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         context = types.SimpleNamespace()
-        bot.openai_client = types.SimpleNamespace(
+        bot.openrouter_client = types.SimpleNamespace(
             chat=types.SimpleNamespace(
                 completions=types.SimpleNamespace(
                     create=Mock(
@@ -181,6 +183,7 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
         )
+        bot.openai_client = None
 
         await bot.handle_message(update, context)
 
@@ -189,7 +192,7 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
         journey = await bot.ensure_user_journey_loaded(user_id)
         self.assertEqual(journey.get("relationship_status"), "Supportive partner")
 
-    async def test_quota_exhaustion_uses_conversational_fallback_reply(self):
+    async def test_openrouter_is_used_for_normal_chat_replies_when_available(self):
         user_id = 339651126
         update = types.SimpleNamespace(
             effective_user=types.SimpleNamespace(id=user_id),
@@ -201,16 +204,47 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         context = types.SimpleNamespace()
+        bot.openrouter_client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(
+                completions=types.SimpleNamespace(
+                    create=Mock(
+                        return_value=types.SimpleNamespace(
+                            choices=[types.SimpleNamespace(message=types.SimpleNamespace(content="OpenRouter says hi."))]
+                        )
+                    )
+                )
+            )
+        )
+        bot.openai_client = None
+
+        await bot.handle_message(update, context)
+
+        reply_text = update.message.reply_text.await_args_list[-1].args[0]
+        self.assertIn("OpenRouter says hi", reply_text)
+
+    async def test_quota_exhaustion_uses_conversational_fallback_reply(self):
+        user_id = 339651126
+        update = types.SimpleNamespace(
+            effective_user=types.SimpleNamespace(id=user_id),
+            message=types.SimpleNamespace(
+                message_id=54323,
+                text="Hello",
+                date=datetime(2026, 3, 24, 12, 5, 0),
+                reply_text=AsyncMock(),
+            ),
+        )
+        context = types.SimpleNamespace()
 
         class FakeQuotaError(Exception):
             status_code = 429
             code = "insufficient_quota"
 
-        bot.openai_client = types.SimpleNamespace(
+        bot.openrouter_client = types.SimpleNamespace(
             chat=types.SimpleNamespace(
                 completions=types.SimpleNamespace(create=Mock(side_effect=FakeQuotaError("quota")))
             )
         )
+        bot.openai_client = None
         original_openai_error = bot.OpenAIError
         bot.OpenAIError = FakeQuotaError
         try:

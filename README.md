@@ -111,7 +111,7 @@ Telegram → Webhook → FastAPI → OpenAI → Response
    | Variable | Description |
    |----------|-------------|
    | `TELEGRAM_BOT_TOKEN` | From [@BotFather](https://t.me/botfather) |
-   | `OPENAI_API_KEY` | From [OpenAI](https://platform.openai.com/api-keys) |
+   | `MINDMATE_OPENROUTER_API_KEY` | From [OpenRouter](https://openrouter.ai) |
    | `DATABASE_URL` or `NEON_MINDMATE_DB_URL` | PostgreSQL connection string (primary storage) |
    | `RENDER_EXTERNAL_URL` | Your Render URL (enables webhooks) |
 
@@ -143,10 +143,10 @@ python bot.py
 
 ### Environment Variables
 ```env
-TELEGRAM_BOT_TOKEN=your_token_here
-OPENAI_API_KEY=your_key_here
-DATABASE_URL=postgresql://user:password@host:5432/database
-# or: NEON_MINDMATE_DB_URL=postgresql://user:password@host:5432/database
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+MINDMATE_OPENROUTER_API_KEY=your_openrouter_api_key_here
+DATABASE_URL=postgresql://user:password@host:port/database
+# or: NEON_MINDMATE_DB_URL=postgresql://user:***@host:5432/database
 RENDER_EXTERNAL_URL=https://your-app.onrender.com  # Optional: enables webhooks
 ```
 
