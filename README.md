@@ -77,7 +77,7 @@ A private, more direct AI support companion experience for authorized users.
 | **Voice** | Smart Caption Handling (gpt-4o-mini-transcribe + gpt-4o-mini-tts) |
 | **Hosting** | Render (free tier) |
 | **Database** | PostgreSQL (Neon, persistent storage) |
-| **Uptime** | UptimeRobot |
+| **Uptime** | UptimeRobot + manual VM fallback |
 
 ### Architecture
 ```
@@ -118,6 +118,8 @@ Telegram → Webhook → FastAPI → OpenAI → Response
 6. Deploy!
 
 > 💡 **Tip:** Use [UptimeRobot](https://uptimerobot.com) to ping `/health` every 5 minutes.
+>
+> If Render exhausts free hours or becomes unavailable, use `./scripts/render_fallback_start.sh` to start the VM bot only when Render is unhealthy.
 
 ---
 

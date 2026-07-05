@@ -70,9 +70,10 @@ It is not wired into the current runtime path; `src/postgres_db.py` is the autho
 
 ## Deployment truth
 
-- Render runs the Python worker process
+- Render runs the primary Python worker process
 - Persistent storage should come from PostgreSQL environment configuration
 - Redis provisioning is no longer required for the active runtime path
+- A VM fallback launcher exists for outage/quota recovery, but it must not run at the same time as Render for the same bot token
 
 ---
 
