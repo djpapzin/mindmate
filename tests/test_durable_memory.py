@@ -406,19 +406,40 @@ class TelegramCommandRegistrationTests(unittest.IsolatedAsyncioTestCase):
         warning_logger.assert_called_once()
         self.assertIn("Telegram startup failed; continuing without Telegram integration", warning_logger.call_args.args[0])
 
+    def test_should_use_webhook_respects_force_local_polling(self):
+        self.assertTrue(bot.should_use_webhook("https://example.com", False))
+        self.assertFalse(bot.should_use_webhook("https://example.com", True))
+        self.assertFalse(bot.should_use_webhook(None, False))
+
     async def test_health_reports_shared_storage_mode(self):
         original_db_manager = bot.db_manager
+        original_startup_status = bot.telegram_startup_status
         bot.db_manager = bot.PostgresInMemoryDatabase()
         await bot.db_manager.connect()
 
         try:
-            payload = await bot.health()
+            payload = bot.build_health_payload()
+            self.assertEqual(bot.health_status_code(), 200)
         finally:
             bot.db_manager = original_db_manager
+            bot.telegram_startup_status = original_startup_status
 
         self.assertEqual(payload["storage"]["mode"], "memory")
         self.assertFalse(payload["storage"]["persistent"])
         self.assertFalse(payload["storage"]["shared_between_render_and_vm"])
+
+    async def test_health_is_unhealthy_when_telegram_startup_failed(self):
+        original_startup_status = bot.telegram_startup_status
+        bot.telegram_startup_status = "failed"
+        try:
+            payload = bot.build_health_payload()
+            status_code = bot.health_status_code()
+        finally:
+            bot.telegram_startup_status = original_startup_status
+
+        self.assertEqual(status_code, 503)
+        self.assertEqual(payload["status"], "unhealthy")
+        self.assertEqual(payload["telegram"]["startup_status"], "failed")
 
 
 class PostgresJournalDedupeTests(unittest.IsolatedAsyncioTestCase):

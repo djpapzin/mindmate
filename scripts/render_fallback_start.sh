@@ -19,4 +19,5 @@ fi
 echo "Render health check failed; starting local fallback bot on port ${LOCAL_PORT}."
 export PORT="${LOCAL_PORT}"
 export RENDER_EXTERNAL_URL=""
+export FORCE_LOCAL_POLLING="1"
 exec python bot.py

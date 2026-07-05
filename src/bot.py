@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from openai import OpenAI, OpenAIError
 from telegram import Update
 from telegram.error import TelegramError
@@ -104,9 +105,18 @@ DAILY_HEARTBEAT_ALLOWED_USER_IDS = {
 }
 
 # Webhook configuration
-# Set RENDER_EXTERNAL_URL in Render environment, or it will use polling as fallback
+# Set RENDER_EXTERNAL_URL in Render environment, or it will use polling as fallback.
+# FORCE_LOCAL_POLLING is used by the local Render fallback launcher to override
+# any .env-provided RENDER_EXTERNAL_URL.
 RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")  # e.g., https://mindmate-dev.onrender.com
-USE_WEBHOOK = bool(RENDER_EXTERNAL_URL)
+FORCE_LOCAL_POLLING = os.getenv("FORCE_LOCAL_POLLING", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def should_use_webhook(render_external_url: str | None, force_local_polling: bool = False) -> bool:
+    return bool(render_external_url) and not force_local_polling
+
+
+USE_WEBHOOK = should_use_webhook(RENDER_EXTERNAL_URL, FORCE_LOCAL_POLLING)
 
 # =============================================================================
 # Personal Mode Configuration
@@ -1227,26 +1237,10 @@ async def lifespan(app: FastAPI):
 
 fastapi_app = FastAPI(title="MindMate Bot", lifespan=lifespan)
 
-@fastapi_app.get("/")
-async def health():
+def build_health_payload() -> dict:
+    status = "unhealthy" if telegram_startup_status == "failed" else "healthy"
     return {
-        "status": "healthy", 
-        "service": "mindmate-bot", 
-        "instance_id": INSTANCE_ID,
-        "mode": "webhook" if USE_WEBHOOK else "polling",
-        "telegram": {
-            "token_configured": bool(TELEGRAM_BOT_TOKEN),
-            "startup_status": telegram_startup_status,
-            "enabled": telegram_app is not None,
-        },
-    }
-
-@fastapi_app.get("/health")
-@fastapi_app.head("/health")
-async def health():
-    """Enhanced health check for uptime monitoring"""
-    return {
-        "status": "healthy",
+        "status": status,
         "service": "mindmate-bot",
         "instance_id": INSTANCE_ID,
         "mode": "webhook" if USE_WEBHOOK else "polling",
@@ -1260,20 +1254,38 @@ async def health():
             "shared_between_render_and_vm": get_storage_mode() == "postgresql",
             "persistent": get_storage_mode() == "postgresql",
         },
-        "uptime": "operational",
+        "uptime": "operational" if status == "healthy" else "degraded",
         "version": "1.2.0",
         "features": {
             "voice": True,
             "personal_mode": True,
             "crisis_detection": True,
-            "webhook": USE_WEBHOOK
+            "webhook": USE_WEBHOOK,
         },
         "endpoints": {
             "webhook": "/webhook",
             "health": "/health",
-            "root": "/"
-        }
+            "root": "/",
+        },
     }
+
+
+def health_status_code() -> int:
+    return 503 if telegram_startup_status == "failed" else 200
+
+
+@fastapi_app.get("/")
+async def root_health():
+    payload = build_health_payload()
+    return JSONResponse(content=payload, status_code=health_status_code())
+
+
+@fastapi_app.get("/health")
+@fastapi_app.head("/health")
+async def health():
+    """Enhanced health check for uptime monitoring"""
+    payload = build_health_payload()
+    return JSONResponse(content=payload, status_code=health_status_code())
 
 @fastapi_app.post("/webhook")
 async def webhook(request: Request):

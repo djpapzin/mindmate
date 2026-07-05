@@ -40,6 +40,7 @@ What it does:
 - pings the live Render `/health`
 - exits without starting anything if Render is healthy
 - starts `python bot.py` locally only if Render cannot be reached successfully
+- forces polling mode with `FORCE_LOCAL_POLLING=1` so a `.env` webhook URL cannot pull the VM back into webhook mode
 
 ## Emergency manual run
 If you already know Render is down and want to bypass the check:
