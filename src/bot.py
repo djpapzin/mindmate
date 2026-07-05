@@ -585,6 +585,44 @@ def build_chat_completion_kwargs(model: str, messages: list[dict], max_output_to
     return kwargs
 
 
+def is_quota_exhausted_openai_error(error: Exception) -> bool:
+    """Detect the specific quota exhaustion case so we can fall back more helpfully."""
+    status_code = getattr(error, "status_code", None)
+    error_code = str(getattr(error, "code", "") or "").lower()
+    error_type = str(getattr(error, "type", "") or "").lower()
+    message = str(error).lower()
+    error_name = error.__class__.__name__.lower()
+    return (
+        status_code == 429
+        and (
+            "insufficient_quota" in error_code
+            or "insufficient quota" in message
+            or "insufficient_quota" in message
+            or "ratelimit" in error_name
+            or "rate_limit" in error_name
+            or "rate_limit" in error_type
+        )
+    )
+
+
+def build_quota_fallback_reply(message: str, used_web: bool = False) -> str:
+    """Give a small deterministic reply when the model is unavailable."""
+    normalized = (message or "").strip().lower()
+    if any(token in normalized for token in ("hello", "hi", "hey", "ping", "yo")):
+        reply = "💙 Hi — I’m here. What’s on your mind?"
+    elif len(normalized) <= 40:
+        reply = "💙 I’m here with you. Tell me a little more about what’s going on."
+    else:
+        reply = (
+            "💙 I’m having trouble generating a full reply right now, but I’m still here. "
+            "Send me the main part in one shorter message and I’ll respond as best I can."
+        )
+
+    if used_web:
+        reply += " If you want, resend it without `web:` and I’ll answer without live web lookup."
+    return reply
+
+
 def build_chat_recovery_message(error: Exception, used_web: bool = False) -> str:
     """Return a user-friendly fallback message for chat model failures."""
     status_code = getattr(error, "status_code", None)
@@ -2464,9 +2502,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
     except OpenAIError as e:
         logger.error(f"OpenAI error: {e}")
-        await update.message.reply_text(
-            build_chat_recovery_message(e, used_web=used_web)
-        )
+        if is_quota_exhausted_openai_error(e):
+            await update.message.reply_text(
+                build_quota_fallback_reply(message or "", used_web=used_web)
+            )
+        else:
+            await update.message.reply_text(
+                build_chat_recovery_message(e, used_web=used_web)
+            )
     except Exception as e:
         logger.error(f"Error: {e}")
         await update.message.reply_text(

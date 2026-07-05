@@ -189,6 +189,39 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
         journey = await bot.ensure_user_journey_loaded(user_id)
         self.assertEqual(journey.get("relationship_status"), "Supportive partner")
 
+    async def test_quota_exhaustion_uses_conversational_fallback_reply(self):
+        user_id = 339651126
+        update = types.SimpleNamespace(
+            effective_user=types.SimpleNamespace(id=user_id),
+            message=types.SimpleNamespace(
+                message_id=54322,
+                text="Hello",
+                date=datetime(2026, 3, 24, 12, 5, 0),
+                reply_text=AsyncMock(),
+            ),
+        )
+        context = types.SimpleNamespace()
+
+        class FakeQuotaError(Exception):
+            status_code = 429
+            code = "insufficient_quota"
+
+        bot.openai_client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(
+                completions=types.SimpleNamespace(create=Mock(side_effect=FakeQuotaError("quota")))
+            )
+        )
+        original_openai_error = bot.OpenAIError
+        bot.OpenAIError = FakeQuotaError
+        try:
+            await bot.handle_message(update, context)
+        finally:
+            bot.OpenAIError = original_openai_error
+
+        reply_text = update.message.reply_text.await_args_list[-1].args[0]
+        self.assertIn("Hi — I’m here", reply_text)
+        self.assertNotIn("overloaded right now", reply_text)
+
 
 class PersonaPromptTests(unittest.TestCase):
     def test_standard_system_prompt_includes_safety_and_anti_template_rules(self):
