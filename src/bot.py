@@ -197,9 +197,11 @@ async def safe_set_bot_commands(telegram_app: Application, commands: list) -> bo
 async def safe_start_telegram_app(telegram_app: Application, commands: list) -> bool:
     """Start Telegram without letting auth/bootstrap issues take down FastAPI startup."""
     await safe_set_bot_commands(telegram_app, commands)
+    started = False
     try:
         await telegram_app.initialize()
         await telegram_app.start()
+        started = True
 
         # Set up webhook if configured
         if USE_WEBHOOK:
@@ -228,6 +230,23 @@ async def safe_start_telegram_app(telegram_app: Application, commands: list) -> 
             exc,
             exc_info=True,
         )
+    finally:
+        if not started:
+            # Clean up any partially initialized PTB runtime before giving FastAPI the green light.
+            try:
+                if telegram_app.updater and telegram_app.updater.running:
+                    await telegram_app.updater.stop()
+            except Exception:
+                logger.debug("[%s] Ignoring updater stop error during failed Telegram startup", INSTANCE_ID, exc_info=True)
+            try:
+                if getattr(telegram_app, "running", False):
+                    await telegram_app.stop()
+            except Exception:
+                logger.debug("[%s] Ignoring app stop error during failed Telegram startup", INSTANCE_ID, exc_info=True)
+            try:
+                await telegram_app.shutdown()
+            except Exception:
+                logger.debug("[%s] Ignoring app shutdown error during failed Telegram startup", INSTANCE_ID, exc_info=True)
     return False
 
 # =============================================================================
@@ -1022,11 +1041,12 @@ async def daily_heartbeat_scheduler_loop() -> None:
 # Global reference to the telegram application
 telegram_app: Application = None
 daily_heartbeat_task: asyncio.Task | None = None
+telegram_startup_status: str = "disabled"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events for FastAPI."""
-    global telegram_app, db_manager, daily_heartbeat_task
+    global telegram_app, db_manager, daily_heartbeat_task, telegram_startup_status
     
     # Startup: Initialize PostgreSQL database first
     logger.info(f"[{INSTANCE_ID}] Initializing PostgreSQL database...")
@@ -1048,7 +1068,9 @@ async def lifespan(app: FastAPI):
 
     if not TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not configured!")
+        telegram_startup_status = "disabled-missing-token"
     else:
+        telegram_startup_status = "starting"
         telegram_runtime = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
         # Set bot commands menu for better UX
@@ -1097,6 +1119,7 @@ async def lifespan(app: FastAPI):
         telegram_started = await safe_start_telegram_app(telegram_runtime, commands)
         if telegram_started:
             telegram_app = telegram_runtime
+            telegram_startup_status = "running"
             if DAILY_HEARTBEAT_ENABLED:
                 daily_heartbeat_task = asyncio.create_task(daily_heartbeat_scheduler_loop(), name="mindmate-daily-heartbeat")
                 logger.info(f"[{INSTANCE_ID}] ✅ Daily heartbeat scheduler started")
@@ -1105,6 +1128,7 @@ async def lifespan(app: FastAPI):
             logger.info(f"[{INSTANCE_ID}] ✅ Bot is running!")
         else:
             telegram_app = None
+            telegram_startup_status = "failed"
 
     yield  # App is running
 
@@ -1136,7 +1160,12 @@ async def health():
         "status": "healthy", 
         "service": "mindmate-bot", 
         "instance_id": INSTANCE_ID,
-        "mode": "webhook" if USE_WEBHOOK else "polling"
+        "mode": "webhook" if USE_WEBHOOK else "polling",
+        "telegram": {
+            "token_configured": bool(TELEGRAM_BOT_TOKEN),
+            "startup_status": telegram_startup_status,
+            "enabled": telegram_app is not None,
+        },
     }
 
 @fastapi_app.get("/health")
@@ -1148,6 +1177,11 @@ async def health():
         "service": "mindmate-bot",
         "instance_id": INSTANCE_ID,
         "mode": "webhook" if USE_WEBHOOK else "polling",
+        "telegram": {
+            "token_configured": bool(TELEGRAM_BOT_TOKEN),
+            "startup_status": telegram_startup_status,
+            "enabled": telegram_app is not None,
+        },
         "uptime": "operational",
         "version": "1.2.0",
         "features": {
