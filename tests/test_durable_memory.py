@@ -316,13 +316,15 @@ class TelegramCommandRegistrationTests(unittest.IsolatedAsyncioTestCase):
                 delete_webhook=AsyncMock(return_value=None),
                 set_webhook=AsyncMock(return_value=None),
             ),
-            updater=types.SimpleNamespace(start_polling=AsyncMock(return_value=None)),
+            updater=types.SimpleNamespace(running=True, start_polling=AsyncMock(return_value=None), stop=AsyncMock(return_value=None)),
             initialize=AsyncMock(side_effect=bot.TelegramError("InvalidToken")),
             start=AsyncMock(return_value=None),
+            stop=AsyncMock(return_value=None),
+            shutdown=AsyncMock(return_value=None),
         )
         warning_logger = Mock()
         original_logger = bot.logger
-        bot.logger = types.SimpleNamespace(warning=warning_logger, info=Mock())
+        bot.logger = types.SimpleNamespace(warning=warning_logger, info=Mock(), debug=Mock())
 
         try:
             result = await bot.safe_start_telegram_app(fake_app, [])
@@ -336,6 +338,20 @@ class TelegramCommandRegistrationTests(unittest.IsolatedAsyncioTestCase):
         fake_app.updater.start_polling.assert_not_awaited()
         warning_logger.assert_called_once()
         self.assertIn("Telegram startup failed; continuing without Telegram integration", warning_logger.call_args.args[0])
+
+    async def test_health_reports_shared_storage_mode(self):
+        original_db_manager = bot.db_manager
+        bot.db_manager = bot.PostgresInMemoryDatabase()
+        await bot.db_manager.connect()
+
+        try:
+            payload = await bot.health()
+        finally:
+            bot.db_manager = original_db_manager
+
+        self.assertEqual(payload["storage"]["mode"], "memory")
+        self.assertFalse(payload["storage"]["persistent"])
+        self.assertFalse(payload["storage"]["shared_between_render_and_vm"])
 
 
 class PostgresJournalDedupeTests(unittest.IsolatedAsyncioTestCase):

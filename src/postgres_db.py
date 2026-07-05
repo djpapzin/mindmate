@@ -736,6 +736,9 @@ class PostgresDatabase:
         if self.pool:
             self.pool.closeall()
 
+    def storage_mode(self) -> str:
+        return "postgresql"
+
 
 class InMemoryDatabase:
     """Simple in-memory fallback"""
@@ -750,6 +753,9 @@ class InMemoryDatabase:
 
     async def connect(self):
         logger.info("✅ Using in-memory storage (fallback)")
+
+    def storage_mode(self) -> str:
+        return "memory"
 
     async def store_message(self, message: Message):
         key = f"{message.user_id}"

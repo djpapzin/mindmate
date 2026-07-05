@@ -499,6 +499,16 @@ pending_context: dict[int, dict] = {}
 # User journey tracking for continuity of care
 user_journey: dict[int, dict] = {}
 
+
+def get_storage_mode() -> str:
+    """Return the active runtime storage mode for health/debugging."""
+    if db_manager and hasattr(db_manager, "storage_mode"):
+        try:
+            return db_manager.storage_mode()
+        except Exception as exc:
+            logger.warning(f"[{INSTANCE_ID}] Unable to determine storage mode: {exc}")
+    return "unknown"
+
 # Daily journaling and scheduling
 daily_journals: dict[int, dict[str, list[dict]]] = {}
 scheduled_messages: dict[int, list] = {}
@@ -1062,6 +1072,7 @@ async def lifespan(app: FastAPI):
         logger.info(f"[{INSTANCE_ID}] 🔄 Will use in-memory fallback storage")
         db_manager = PostgresInMemoryDatabase()
         await db_manager.connect()
+    logger.info(f"[{INSTANCE_ID}] Active storage mode: {get_storage_mode()}")
     
     # Initialize and start the Telegram bot
     logger.info(f"[{INSTANCE_ID}] Starting MindMate Bot...")
@@ -1181,6 +1192,11 @@ async def health():
             "token_configured": bool(TELEGRAM_BOT_TOKEN),
             "startup_status": telegram_startup_status,
             "enabled": telegram_app is not None,
+        },
+        "storage": {
+            "mode": get_storage_mode(),
+            "shared_between_render_and_vm": get_storage_mode() == "postgresql",
+            "persistent": get_storage_mode() == "postgresql",
         },
         "uptime": "operational",
         "version": "1.2.0",
