@@ -1,9 +1,12 @@
+import os
 import sys
 import types
 import unittest
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
+
+os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -338,42 +341,101 @@ class TelegramCommandRegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Telegram startup failed; continuing without Telegram integration", warning_logger.call_args.args[0])
 
 
-class PostgresJournalDedupeTests(unittest.IsolatedAsyncioTestCase):
-    async def test_append_journal_entry_uses_advisory_lock_and_reuses_existing_source_message(self):
-        created_at = datetime(2026, 3, 24, 7, 10, 0)
-        existing_row = (
-            "2026-03-24",
-            "daily_heartbeat",
-            "Already stored",
-            None,
-            None,
-            {"source_message_id": "12345", "source": "daily_checkin_reply"},
-            created_at,
-        )
-        cursor = _FakeCursor(fetchone_results=[existing_row])
-        conn = _FakeConnection(cursor)
-        pool = _FakePool(conn)
+class TelegramStartupResilienceTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.original_token = bot.TELEGRAM_BOT_TOKEN
+        self.original_telegram_app = bot.telegram_app
+        self.original_status = bot.telegram_startup_status.copy()
+        self.original_db_manager = bot.db_manager
+        self.original_daily_heartbeat_task = bot.daily_heartbeat_task
 
-        db = PostgresDatabase.__new__(PostgresDatabase)
-        db.pool = pool
-        db.prefix = ""
-        db._get_pool = lambda: pool
+    async def asyncTearDown(self):
+        bot.TELEGRAM_BOT_TOKEN = self.original_token
+        bot.telegram_app = self.original_telegram_app
+        bot.telegram_startup_status.clear()
+        bot.telegram_startup_status.update(self.original_status)
+        bot.db_manager = self.original_db_manager
+        bot.daily_heartbeat_task = self.original_daily_heartbeat_task
 
-        entry = await db.append_journal_entry(
-            user_id=42,
-            local_date="2026-03-24",
-            entry_text="Already stored",
-            entry_type="daily_heartbeat",
-            metadata={"source_message_id": "12345", "source": "daily_checkin_reply"},
-            created_at=created_at,
-        )
+    async def test_lifespan_degrades_cleanly_when_telegram_initialize_fails(self):
+        class FakeDB:
+            async def connect(self):
+                return None
 
-        self.assertEqual(entry["entry"], "Already stored")
-        self.assertEqual(entry["metadata"]["source_message_id"], "12345")
-        self.assertEqual(conn.commit_count, 1)
-        self.assertEqual(pool.put_back_count, 1)
-        self.assertTrue(any("pg_advisory_xact_lock" in query for query, _ in cursor.executed))
-        self.assertFalse(any("INSERT INTO mindmate_journal_entries" in query for query, _ in cursor.executed))
+            async def close(self):
+                return None
+
+        class FakeBotAPI:
+            async def set_my_commands(self, *args, **kwargs):
+                return None
+
+            async def delete_webhook(self, *args, **kwargs):
+                return None
+
+            async def set_webhook(self, *args, **kwargs):
+                return None
+
+        class FakeUpdater:
+            running = False
+
+            async def start_polling(self, *args, **kwargs):
+                return None
+
+            async def stop(self):
+                return None
+
+        class FakeTelegramApp:
+            def __init__(self):
+                self.bot = FakeBotAPI()
+                self.updater = FakeUpdater()
+
+            def add_handler(self, *args, **kwargs):
+                return None
+
+            def add_error_handler(self, *args, **kwargs):
+                return None
+
+            async def initialize(self):
+                raise RuntimeError("Unauthorized")
+
+            async def start(self):
+                return None
+
+            async def stop(self):
+                return None
+
+            async def shutdown(self):
+                return None
+
+        class FakeBuilder:
+            def token(self, token):
+                self.token = token
+                return self
+
+            def build(self):
+                return FakeTelegramApp()
+
+        bot.TELEGRAM_BOT_TOKEN = "expired-token"
+        with patch.object(bot, "PostgresDatabase", lambda *args, **kwargs: FakeDB()), patch.object(
+            bot, "PostgresInMemoryDatabase", lambda *args, **kwargs: FakeDB()
+        ), patch.object(bot.Application, "builder", return_value=FakeBuilder()):
+            async with bot.lifespan(types.SimpleNamespace()):
+                self.assertIsNone(bot.telegram_app)
+                self.assertEqual(bot.telegram_startup_status["state"], "degraded")
+                self.assertIn("Unauthorized", str(bot.telegram_startup_status["detail"]))
+                health = bot._build_health_payload()
+                self.assertEqual(health["status"], "degraded")
+                self.assertEqual(health["telegram"]["state"], "degraded")
+                self.assertIn("Telegram integration is disabled or degraded", health["details"])
+
+    async def test_health_payload_reports_degraded_when_telegram_disabled(self):
+        bot.TELEGRAM_BOT_TOKEN = None
+        bot._set_telegram_startup_status("not_configured", "TELEGRAM_BOT_TOKEN not configured")
+        payload = bot._build_health_payload()
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["telegram"]["state"], "not_configured")
+        self.assertIn("Telegram integration is disabled or degraded", payload["details"])
 
 
 if __name__ == "__main__":

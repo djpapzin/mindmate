@@ -37,10 +37,8 @@ DB_AVAILABLE = "postgres"
 # Unique instance ID to help debug multiple instances
 INSTANCE_ID = str(uuid.uuid4())[:8]
 
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
+# ======================================================================# Helper Functions
+# ======================================================================
 def escape_markdown_v2(text: str) -> str:
     """Escape special characters for Telegram MarkdownV2 format."""
     # Characters that need to be escaped in MarkdownV2
@@ -67,10 +65,8 @@ async def send_markdown_message(update: Update, text: str):
     html_text = _render_basic_telegram_html(text)
     return await update.message.reply_text(html_text, parse_mode='HTML')
 
-# =============================================================================
-# Configuration
-# =============================================================================
-
+# ======================================================================# Configuration
+# ======================================================================
 # Load env from this project only (avoid global OpenClaw .env)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=True)
@@ -99,10 +95,8 @@ DAILY_HEARTBEAT_ALLOWED_USER_IDS = {
 RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")  # e.g., https://mindmate-dev.onrender.com
 USE_WEBHOOK = bool(RENDER_EXTERNAL_URL)
 
-# =============================================================================
-# Personal Mode Configuration
-# =============================================================================
-
+# ======================================================================# Personal Mode Configuration
+# ======================================================================
 # Users with Personal Mode access - each can have custom context
 PERSONAL_MODE_USERS = {
     339651126: {  # DJ Papzin
@@ -230,10 +224,8 @@ async def safe_start_telegram_app(telegram_app: Application, commands: list) -> 
         )
     return False
 
-# =============================================================================
-# Constants
-# =============================================================================
-
+# ======================================================================# Constants
+# ======================================================================
 # Standard system prompt (for regular users)
 BASE_SAFETY_RULES = """You are MindMate, an AI mental wellness companion.
 
@@ -456,10 +448,8 @@ Example: `web: latest bipolar treatment guidelines`
 
 Remember: I'm here to support, not replace professional help. 💙"""
 
-# =============================================================================
-# Global State
-# =============================================================================
-
+# ======================================================================# Global State
+# ======================================================================
 # Active database manager: PostgreSQL in normal operation.
 db_manager: PostgresDatabase = None
 
@@ -1015,24 +1005,50 @@ async def daily_heartbeat_scheduler_loop() -> None:
         await asyncio.sleep(DAILY_HEARTBEAT_POLL_SECONDS)
 
 
-# =============================================================================
-# FastAPI App
-# =============================================================================
-
+# ======================================================================# FastAPI App
+# ======================================================================
 # Global reference to the telegram application
-telegram_app: Application = None
+telegram_app: Application | None = None
 daily_heartbeat_task: asyncio.Task | None = None
+memory_store = None
+telegram_startup_status: dict[str, object] = {
+    "configured": bool(TELEGRAM_BOT_TOKEN),
+    "state": "not_configured" if not TELEGRAM_BOT_TOKEN else "pending",
+    "detail": "TELEGRAM_BOT_TOKEN not configured" if not TELEGRAM_BOT_TOKEN else None,
+}
+MINDMATE_HEARTBEAT_STATE_PATH = PROJECT_ROOT / "memory" / "mindmate-heartbeat-state.json"
+
+
+def _set_telegram_startup_status(state: str, detail: str | None = None) -> None:
+    telegram_startup_status["configured"] = bool(TELEGRAM_BOT_TOKEN)
+    telegram_startup_status["state"] = state
+    telegram_startup_status["detail"] = detail
+
+
+def _build_health_payload() -> dict[str, object]:
+    telegram_state = str(telegram_startup_status.get("state", "unknown"))
+    payload: dict[str, object] = {
+        "status": "healthy" if telegram_state == "ready" else "degraded",
+        "service": "mindmate-bot",
+        "instance_id": INSTANCE_ID,
+        "mode": "webhook" if USE_WEBHOOK else "polling",
+        "telegram": dict(telegram_startup_status),
+    }
+    if telegram_state != "ready":
+        payload["details"] = "Telegram integration is disabled or degraded"
+    return payload
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events for FastAPI."""
     global telegram_app, db_manager, daily_heartbeat_task
-    
+
     # Startup: Initialize PostgreSQL database first
     logger.info(f"[{INSTANCE_ID}] Initializing PostgreSQL database...")
-    
+
     db_url = os.environ.get('NEON_MINDMATE_DB_URL') or os.environ.get('DATABASE_URL')
-    
+
     try:
         db_manager = PostgresDatabase(db_url, openai_client)
         await db_manager.connect()
@@ -1042,69 +1058,91 @@ async def lifespan(app: FastAPI):
         logger.info(f"[{INSTANCE_ID}] 🔄 Will use in-memory fallback storage")
         db_manager = PostgresInMemoryDatabase()
         await db_manager.connect()
-    
+
     # Initialize and start the Telegram bot
     logger.info(f"[{INSTANCE_ID}] Starting MindMate Bot...")
 
     if not TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not configured!")
+        telegram_app = None
+        _set_telegram_startup_status("not_configured", "TELEGRAM_BOT_TOKEN not configured")
     else:
-        telegram_runtime = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        try:
+            telegram_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-        # Set bot commands menu for better UX
-        from telegram import BotCommand
-        commands = [
-            BotCommand("start", "🚀 Start conversation"),
-            BotCommand("help", "❓ Get help"),
-            BotCommand("mode", "🔓 Switch to Personal Mode"),
-            BotCommand("clear", "🧹 Clear history"),
-            BotCommand("votd", "📖 Get today's Bible verse"),
-            BotCommand("model", "🧪 Switch AI model"),
-            BotCommand("summary", "📋 Show a quick memory summary"),
-            BotCommand("mood", "📈 Log a mood check-in"),
-            BotCommand("heartbeat", "🫀 Show heartbeat pulse"),
-            BotCommand("schedule", "⏰ Manage daily check-ins"),
-            BotCommand("feedback", "📝 Share quick feedback"),
-        ]
+            # Set bot commands menu for better UX
+            from telegram import BotCommand
 
-        # Register handlers before attempting Telegram startup.
-        telegram_runtime.add_handler(CommandHandler("start", cmd_start))
-        telegram_runtime.add_handler(CommandHandler("help", cmd_help))
-        telegram_runtime.add_handler(CommandHandler("chatid", cmd_chatid))
-        telegram_runtime.add_handler(CommandHandler("clear", cmd_clear))
-        telegram_runtime.add_handler(CommandHandler("mode", cmd_mode))
-        telegram_runtime.add_handler(CommandHandler("votd", cmd_votd))
-        telegram_runtime.add_handler(CommandHandler("model", cmd_model))
-        telegram_runtime.add_handler(CommandHandler("feedback", cmd_feedback))
-        telegram_runtime.add_handler(CommandHandler("context", cmd_context))
-        telegram_runtime.add_handler(CommandHandler("remember", cmd_remember))
-        telegram_runtime.add_handler(CommandHandler("forget", cmd_forget))
-        telegram_runtime.add_handler(CommandHandler("confirm", cmd_confirm))
-        telegram_runtime.add_handler(CommandHandler("decline", cmd_decline))
-        telegram_runtime.add_handler(CommandHandler("journey", cmd_journey))
-        telegram_runtime.add_handler(CommandHandler("journal", cmd_journal))
-        telegram_runtime.add_handler(CommandHandler("import_journal", cmd_import_journal))
-        telegram_runtime.add_handler(CommandHandler("summary", cmd_summary))
-        telegram_runtime.add_handler(CommandHandler("mood", cmd_mood))
-        telegram_runtime.add_handler(CommandHandler("heartbeat", cmd_heartbeat))
-        telegram_runtime.add_handler(CommandHandler("schedule", cmd_schedule))
-        telegram_runtime.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
-        telegram_runtime.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image_document))
-        telegram_runtime.add_handler(MessageHandler(filters.Document.PDF | filters.Document.TEXT, handle_document))
-        telegram_runtime.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-        telegram_runtime.add_error_handler(error_handler)
+            commands = [
+                BotCommand("start", "🚀 Start conversation"),
+                BotCommand("help", "❓ Get help"),
+                BotCommand("mode", "🔓 Switch to Personal Mode"),
+                BotCommand("clear", "🧹 Clear history"),
+                BotCommand("votd", "📖 Get today's Bible verse"),
+                BotCommand("model", "🧪 Switch AI model"),
+                BotCommand("feedback", "📝 Share quick feedback"),
+            ]
 
-        telegram_started = await safe_start_telegram_app(telegram_runtime, commands)
-        if telegram_started:
-            telegram_app = telegram_runtime
+            # Set bot commands for better UX; never fail startup if Telegram is rate-limited or rejects the token.
+            await safe_set_bot_commands(telegram_app, commands)
+
+            # Register handlers
+            telegram_app.add_handler(CommandHandler("start", cmd_start))
+            telegram_app.add_handler(CommandHandler("help", cmd_help))
+            telegram_app.add_handler(CommandHandler("chatid", cmd_chatid))
+            telegram_app.add_handler(CommandHandler("clear", cmd_clear))
+            telegram_app.add_handler(CommandHandler("mode", cmd_mode))
+            telegram_app.add_handler(CommandHandler("votd", cmd_votd))
+            telegram_app.add_handler(CommandHandler("model", cmd_model))
+            telegram_app.add_handler(CommandHandler("feedback", cmd_feedback))
+            telegram_app.add_handler(CommandHandler("context", cmd_context))
+            telegram_app.add_handler(CommandHandler("remember", cmd_remember))
+            telegram_app.add_handler(CommandHandler("forget", cmd_forget))
+            telegram_app.add_handler(CommandHandler("confirm", cmd_confirm))
+            telegram_app.add_handler(CommandHandler("decline", cmd_decline))
+            telegram_app.add_handler(CommandHandler("journey", cmd_journey))
+            telegram_app.add_handler(CommandHandler("journal", cmd_journal))
+            telegram_app.add_handler(CommandHandler("schedule", cmd_schedule))
+            telegram_app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
+            telegram_app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_image_document))
+            telegram_app.add_handler(MessageHandler(filters.Document.PDF | filters.Document.TEXT, handle_document))
+            telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+            telegram_app.add_error_handler(error_handler)
+
+            await telegram_app.initialize()
+            await telegram_app.start()
+
+            # Set up webhook if configured
+            if USE_WEBHOOK:
+                webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
+                logger.info(f"[{INSTANCE_ID}] Setting up webhook: {webhook_url}")
+                await telegram_app.bot.delete_webhook(drop_pending_updates=True)
+                await telegram_app.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES)
+                logger.info(f"[{INSTANCE_ID}] ✅ Webhook set successfully!")
+            else:
+                logger.info(f"[{INSTANCE_ID}] Starting polling mode...")
+                await telegram_app.updater.start_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+
             if DAILY_HEARTBEAT_ENABLED:
                 daily_heartbeat_task = asyncio.create_task(daily_heartbeat_scheduler_loop(), name="mindmate-daily-heartbeat")
                 logger.info(f"[{INSTANCE_ID}] ✅ Daily heartbeat scheduler started")
             else:
                 logger.info(f"[{INSTANCE_ID}] Daily heartbeat scheduler disabled via env")
+
+            _set_telegram_startup_status("ready", None)
             logger.info(f"[{INSTANCE_ID}] ✅ Bot is running!")
-        else:
+        except Exception as exc:
+            logger.exception(f"[{INSTANCE_ID}] Telegram startup failed; continuing without Telegram integration: {exc}")
+            if telegram_app is not None:
+                try:
+                    await telegram_app.shutdown()
+                except Exception as shutdown_exc:
+                    logger.warning(
+                        f"[{INSTANCE_ID}] Telegram shutdown after startup failure also failed: {shutdown_exc}",
+                        exc_info=True,
+                    )
             telegram_app = None
+            _set_telegram_startup_status("degraded", f"{type(exc).__name__}: {exc}")
 
     yield  # App is running
 
@@ -1132,36 +1170,32 @@ fastapi_app = FastAPI(title="MindMate Bot", lifespan=lifespan)
 
 @fastapi_app.get("/")
 async def health():
-    return {
-        "status": "healthy", 
-        "service": "mindmate-bot", 
-        "instance_id": INSTANCE_ID,
-        "mode": "webhook" if USE_WEBHOOK else "polling"
-    }
+    return _build_health_payload()
+
 
 @fastapi_app.get("/health")
 @fastapi_app.head("/health")
 async def health():
     """Enhanced health check for uptime monitoring"""
-    return {
-        "status": "healthy",
-        "service": "mindmate-bot",
-        "instance_id": INSTANCE_ID,
-        "mode": "webhook" if USE_WEBHOOK else "polling",
-        "uptime": "operational",
-        "version": "1.2.0",
-        "features": {
-            "voice": True,
-            "personal_mode": True,
-            "crisis_detection": True,
-            "webhook": USE_WEBHOOK
-        },
-        "endpoints": {
-            "webhook": "/webhook",
-            "health": "/health",
-            "root": "/"
+    payload = _build_health_payload()
+    payload.update(
+        {
+            "uptime": "operational" if payload["status"] == "healthy" else "degraded",
+            "version": "1.2.0",
+            "features": {
+                "voice": True,
+                "personal_mode": True,
+                "crisis_detection": True,
+                "webhook": USE_WEBHOOK,
+            },
+            "endpoints": {
+                "webhook": "/webhook",
+                "health": "/health",
+                "root": "/",
+            },
         }
-    }
+    )
+    return payload
 
 @fastapi_app.post("/webhook")
 async def webhook(request: Request):
@@ -1184,10 +1218,8 @@ async def webhook(request: Request):
         traceback.print_exc()
         return {"error": str(e)}
 
-# =============================================================================
-# Conversation History
-# =============================================================================
-
+# ======================================================================# Conversation History
+# ======================================================================
 async def get_history(user_id: int) -> list[dict[str, str]]:
     """Get conversation history for a user from PostgreSQL or fallback memory."""
     if db_manager:
@@ -1492,10 +1524,8 @@ async def clear_history(user_id: int) -> None:
     # Fallback to in-memory storage
     conversation_history.pop(user_id, None)
 
-# =============================================================================
-# Crisis Detection
-# =============================================================================
-
+# ======================================================================# Crisis Detection
+# ======================================================================
 def detect_crisis(message: str) -> bool:
     message_lower = message.lower()
     return any(keyword in message_lower for keyword in CRISIS_KEYWORDS)
@@ -1644,8 +1674,7 @@ def should_auto_web_search(message: str, history: list[dict[str, str]] | None = 
     """Return True when conservative auto-web routing should run."""
     return extract_auto_web_query(message, history) is not None
 # Telegram Bot Handlers
-# =============================================================================
-
+# ======================================================================
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     personal_mode = is_personal_mode(user_id)
@@ -2926,10 +2955,8 @@ def create_markdown_report(filename: str, ratings: list, final_results: dict, js
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error(f"Bot error: {context.error}")
-# =============================================================================
-# Main
-# =============================================================================
-
+# ======================================================================# Main
+# ======================================================================
 def main():
     logger.info("=" * 50)
     logger.info("Starting MindMate Bot with FastAPI")
