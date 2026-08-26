@@ -31,6 +31,7 @@ from verse_of_the_day import get_verse_of_the_day
 # Import the active storage module: PostgreSQL with an in-memory fallback.
 from postgres_db import Message, PostgresDatabase
 from postgres_db import InMemoryDatabase as PostgresInMemoryDatabase
+from legacy_redis_migration import migrate_legacy_redis
 
 DB_AVAILABLE = "postgres"
 
@@ -1124,6 +1125,16 @@ async def lifespan(app: FastAPI):
         db_manager = PostgresDatabase(db_url, openai_client)
         await db_manager.connect()
         logger.info(f"[{INSTANCE_ID}] ✅ PostgreSQL database connected successfully!")
+        legacy_redis_url = os.environ.get("REDIS_URL")
+        if legacy_redis_url:
+            try:
+                await migrate_legacy_redis(db_manager, legacy_redis_url)
+            except Exception as migration_error:
+                logger.warning(
+                    "[%s] Legacy Redis recovery failed without affecting PostgreSQL: %s",
+                    INSTANCE_ID,
+                    migration_error,
+                )
     except Exception as e:
         logger.error(f"[{INSTANCE_ID}] ❌ Failed to connect to PostgreSQL: {e}")
         logger.info(f"[{INSTANCE_ID}] 🔄 Will use in-memory fallback storage")

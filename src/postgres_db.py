@@ -126,8 +126,17 @@ class PostgresDatabase:
                 )
             """)
 
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS mindmate_data_migrations (
+                    migration_name VARCHAR(100) PRIMARY KEY,
+                    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_user ON mindmate_messages(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_conv ON mindmate_messages(conversation_id)")
+            cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_user_message_id ON mindmate_messages(user_id, message_id) WHERE message_id IS NOT NULL")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_prefs_user ON mindmate_user_preferences(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_feedback_user ON mindmate_feedback(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON mindmate_feedback(created_at)")
@@ -156,6 +165,59 @@ class PostgresDatabase:
                 VALUES (%s, %s, %s, %s, %s, %s)
             """, (message.user_id, conversation_id, message.role, message.content, message.message_id, message.timestamp))
             conn.commit()
+        finally:
+            pool.putconn(conn)
+
+    async def store_message_if_absent(self, message: Message) -> bool:
+        """Store a message idempotently for legacy recovery."""
+        pool = self._get_pool()
+        conn = pool.getconn()
+        cursor = conn.cursor()
+        try:
+            conversation_id = self._key(f"conversation:{message.user_id}")
+            cursor.execute("""
+                INSERT INTO mindmate_messages (user_id, conversation_id, role, content, message_id, timestamp)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, message_id) WHERE message_id IS NOT NULL DO NOTHING
+            """, (message.user_id, conversation_id, message.role, message.content, message.message_id, message.timestamp))
+            inserted = cursor.rowcount == 1
+            conn.commit()
+            return inserted
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            pool.putconn(conn)
+
+    async def is_legacy_migration_complete(self, migration_name: str) -> bool:
+        pool = self._get_pool()
+        conn = pool.getconn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT 1 FROM mindmate_data_migrations WHERE migration_name = %s",
+                (migration_name,),
+            )
+            return cursor.fetchone() is not None
+        finally:
+            pool.putconn(conn)
+
+    async def mark_legacy_migration_complete(self, migration_name: str, metadata: Dict[str, Any]) -> None:
+        pool = self._get_pool()
+        conn = pool.getconn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO mindmate_data_migrations (migration_name, metadata, completed_at)
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (migration_name) DO UPDATE SET
+                    metadata = EXCLUDED.metadata,
+                    completed_at = EXCLUDED.completed_at
+            """, (migration_name, Json(metadata)))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             pool.putconn(conn)
 
