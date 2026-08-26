@@ -28,6 +28,9 @@ class Message:
 class PostgresDatabase:
     """PostgreSQL database manager for the active production storage path."""
 
+    def storage_mode(self) -> str:
+        return "postgres"
+
     def __init__(self, db_url: str = None, openai_client=None):
         self.db_url = db_url or os.environ.get('NEON_MINDMATE_DB_URL') or os.environ.get('DATABASE_URL')
         if not self.db_url:
@@ -739,6 +742,9 @@ class PostgresDatabase:
 
 class InMemoryDatabase:
     """Simple in-memory fallback"""
+
+    def storage_mode(self) -> str:
+        return "memory"
 
     def __init__(self, db_url=None, openai_client=None):
         self.messages = {}

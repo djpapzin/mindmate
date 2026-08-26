@@ -26,11 +26,13 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
         self.original_daily_heartbeat_enabled = bot.DAILY_HEARTBEAT_ENABLED
         self.original_telegram_app = bot.telegram_app
         self.original_openai_client = bot.openai_client
+        self.original_openrouter_client = bot.openrouter_client
 
     async def asyncTearDown(self):
         bot.DAILY_HEARTBEAT_ENABLED = self.original_daily_heartbeat_enabled
         bot.telegram_app = self.original_telegram_app
         bot.openai_client = self.original_openai_client
+        bot.openrouter_client = self.original_openrouter_client
 
     async def test_journey_survives_restart_via_active_db_layer(self):
         user_id = 1234
@@ -170,7 +172,7 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         context = types.SimpleNamespace()
-        bot.openai_client = types.SimpleNamespace(
+        bot.openrouter_client = types.SimpleNamespace(
             chat=types.SimpleNamespace(
                 completions=types.SimpleNamespace(
                     create=Mock(
@@ -181,6 +183,7 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
         )
+        bot.openai_client = None
 
         await bot.handle_message(update, context)
 
@@ -188,6 +191,70 @@ class DurableMemoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Therapy: Currently in therapy", summary)
         journey = await bot.ensure_user_journey_loaded(user_id)
         self.assertEqual(journey.get("relationship_status"), "Supportive partner")
+
+    async def test_openrouter_is_used_for_normal_chat_replies_when_available(self):
+        user_id = 339651126
+        update = types.SimpleNamespace(
+            effective_user=types.SimpleNamespace(id=user_id),
+            message=types.SimpleNamespace(
+                message_id=54322,
+                text="Hello",
+                date=datetime(2026, 3, 24, 12, 5, 0),
+                reply_text=AsyncMock(),
+            ),
+        )
+        context = types.SimpleNamespace()
+        bot.openrouter_client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(
+                completions=types.SimpleNamespace(
+                    create=Mock(
+                        return_value=types.SimpleNamespace(
+                            choices=[types.SimpleNamespace(message=types.SimpleNamespace(content="OpenRouter says hi."))]
+                        )
+                    )
+                )
+            )
+        )
+        bot.openai_client = None
+
+        await bot.handle_message(update, context)
+
+        reply_text = update.message.reply_text.await_args_list[-1].args[0]
+        self.assertIn("OpenRouter says hi", reply_text)
+
+    async def test_quota_exhaustion_uses_conversational_fallback_reply(self):
+        user_id = 339651126
+        update = types.SimpleNamespace(
+            effective_user=types.SimpleNamespace(id=user_id),
+            message=types.SimpleNamespace(
+                message_id=54323,
+                text="Hello",
+                date=datetime(2026, 3, 24, 12, 5, 0),
+                reply_text=AsyncMock(),
+            ),
+        )
+        context = types.SimpleNamespace()
+
+        class FakeQuotaError(Exception):
+            status_code = 429
+            code = "insufficient_quota"
+
+        bot.openrouter_client = types.SimpleNamespace(
+            chat=types.SimpleNamespace(
+                completions=types.SimpleNamespace(create=Mock(side_effect=FakeQuotaError("quota")))
+            )
+        )
+        bot.openai_client = None
+        original_openai_error = bot.OpenAIError
+        bot.OpenAIError = FakeQuotaError
+        try:
+            await bot.handle_message(update, context)
+        finally:
+            bot.OpenAIError = original_openai_error
+
+        reply_text = update.message.reply_text.await_args_list[-1].args[0]
+        self.assertIn("Hi — I’m here", reply_text)
+        self.assertNotIn("overloaded right now", reply_text)
 
 
 class PersonaPromptTests(unittest.TestCase):
@@ -316,13 +383,15 @@ class TelegramCommandRegistrationTests(unittest.IsolatedAsyncioTestCase):
                 delete_webhook=AsyncMock(return_value=None),
                 set_webhook=AsyncMock(return_value=None),
             ),
-            updater=types.SimpleNamespace(start_polling=AsyncMock(return_value=None)),
+            updater=types.SimpleNamespace(running=True, start_polling=AsyncMock(return_value=None), stop=AsyncMock(return_value=None)),
             initialize=AsyncMock(side_effect=bot.TelegramError("InvalidToken")),
             start=AsyncMock(return_value=None),
+            stop=AsyncMock(return_value=None),
+            shutdown=AsyncMock(return_value=None),
         )
         warning_logger = Mock()
         original_logger = bot.logger
-        bot.logger = types.SimpleNamespace(warning=warning_logger, info=Mock())
+        bot.logger = types.SimpleNamespace(warning=warning_logger, info=Mock(), debug=Mock())
 
         try:
             result = await bot.safe_start_telegram_app(fake_app, [])
@@ -336,6 +405,20 @@ class TelegramCommandRegistrationTests(unittest.IsolatedAsyncioTestCase):
         fake_app.updater.start_polling.assert_not_awaited()
         warning_logger.assert_called_once()
         self.assertIn("Telegram startup failed; continuing without Telegram integration", warning_logger.call_args.args[0])
+
+    async def test_health_reports_shared_storage_mode(self):
+        original_db_manager = bot.db_manager
+        bot.db_manager = bot.PostgresInMemoryDatabase()
+        await bot.db_manager.connect()
+
+        try:
+            payload = await bot.health()
+        finally:
+            bot.db_manager = original_db_manager
+
+        self.assertEqual(payload["storage"]["mode"], "memory")
+        self.assertFalse(payload["storage"]["persistent"])
+        self.assertFalse(payload["storage"]["shared_between_render_and_vm"])
 
 
     async def test_personal_start_renders_bold_mode_label(self):
