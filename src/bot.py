@@ -560,15 +560,8 @@ VOICE_TTS_MODEL = "gpt-4o-mini-tts"
 
 
 def get_user_model(user_id: int) -> str:
-    """Get the model selected by user, or default."""
-    # Check if user has a specific model assigned (for Personal Mode users)
-    if user_id in PERSONAL_MODE_USERS:
-        assigned_model = PERSONAL_MODE_USERS[user_id].get("model")
-        if assigned_model:
-            return assigned_model
-    
-    # Fall back to user's selected model or default
-    return user_model_selection.get(user_id, DEFAULT_MODEL)
+    """Return the single model configured for the active OpenRouter deployment."""
+    return MINDMATE_OPENROUTER_CHAT_MODEL
 
 def set_user_model(user_id: int, model: str) -> None:
     """Set the model for a user."""
@@ -606,31 +599,26 @@ def create_chat_completion(messages: list[dict], model: str, max_output_tokens: 
         raise RuntimeError("OpenRouter is not configured")
 
     response = openrouter_client.chat.completions.create(
-        **build_chat_completion_kwargs(MINDMATE_OPENROUTER_CHAT_MODEL, messages, max_output_tokens)
+        **build_chat_completion_kwargs(model, messages, max_output_tokens)
     )
     logger.info(
         "Chat completion successful via openrouter using %s",
-        MINDMATE_OPENROUTER_CHAT_MODEL,
+        model,
     )
-    return response, "openrouter", MINDMATE_OPENROUTER_CHAT_MODEL
+    return response, "openrouter", model
 
 
 def is_quota_exhausted_openai_error(error: Exception) -> bool:
     """Detect the specific quota exhaustion case so we can fall back more helpfully."""
     status_code = getattr(error, "status_code", None)
     error_code = str(getattr(error, "code", "") or "").lower()
-    error_type = str(getattr(error, "type", "") or "").lower()
     message = str(error).lower()
-    error_name = error.__class__.__name__.lower()
     return (
         status_code == 429
         and (
             "insufficient_quota" in error_code
             or "insufficient quota" in message
             or "insufficient_quota" in message
-            or "ratelimit" in error_name
-            or "rate_limit" in error_name
-            or "rate_limit" in error_type
         )
     )
 
@@ -1251,6 +1239,7 @@ async def health():
 @fastapi_app.head("/health")
 async def health():
     """Enhanced health check for uptime monitoring"""
+    storage_mode = get_storage_mode()
     return {
         "status": "healthy",
         "service": "mindmate-bot",
@@ -1262,14 +1251,14 @@ async def health():
             "enabled": telegram_app is not None,
         },
         "storage": {
-            "mode": get_storage_mode(),
-            "shared_between_render_and_vm": get_storage_mode() == "postgresql",
-            "persistent": get_storage_mode() == "postgresql",
+            "mode": storage_mode,
+            "shared_between_render_and_vm": storage_mode == "postgres",
+            "persistent": storage_mode == "postgres",
         },
         "uptime": "operational",
         "version": "1.2.0",
         "features": {
-            "voice": True,
+            "voice": openai_client is not None,
             "personal_mode": True,
             "crisis_detection": True,
             "webhook": USE_WEBHOOK
@@ -1908,39 +1897,12 @@ async def cmd_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /model command for A/B testing."""
-    user_id = update.effective_user.id
-    args = context.args
-    
-    # Show current model if no args
-    if not args:
-        current = get_user_model(user_id)
-        models_list = "\n".join([f"• `{k}` → {v}" for k, v in AVAILABLE_MODELS.items()])
-        await send_markdown_message(update,
-            f"🧪 **A/B Testing Mode**\n\n"
-            f"**Current model:** `{current}`\n\n"
-            f"**Available models:**\n{models_list}\n\n"
-            f"**Usage:** `/model 5.4-mini`",
-        )
-        return
-    
-    # Set new model
-    model_key = args[0].lower()
-    if model_key in AVAILABLE_MODELS:
-        new_model = AVAILABLE_MODELS[model_key]
-        set_user_model(user_id, new_model)
-        await clear_history(user_id)  # Clear history when switching models
-        logger.info(f"User {user_id} switched to model: {new_model}")
-        await send_markdown_message(update,
-            f"✅ Switched to **{new_model}**\n\n"
-            f"History cleared for fresh comparison.\n"
-            f"Start chatting to test this model!",
-        )
-    else:
-        await send_markdown_message(update,
-            f"❌ Unknown model: `{model_key}`\n\n"
-            f"Available: {', '.join(AVAILABLE_MODELS.keys())}",
-        )
+    """Report the model configured for the active OpenRouter deployment."""
+    await send_markdown_message(
+        update,
+        f"🤖 **Active model:** `{MINDMATE_OPENROUTER_CHAT_MODEL}`\n\n"
+        "Model switching is not enabled on this deployment.",
+    )
 
 
 async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

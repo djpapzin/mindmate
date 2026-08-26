@@ -421,6 +421,52 @@ class TelegramCommandRegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(payload["storage"]["shared_between_render_and_vm"])
 
 
+    async def test_health_reports_postgres_as_persistent_shared_storage(self):
+        original_db_manager = bot.db_manager
+        bot.db_manager = bot.PostgresDatabase.__new__(bot.PostgresDatabase)
+
+        try:
+            payload = await bot.health()
+        finally:
+            bot.db_manager = original_db_manager
+
+        self.assertEqual(payload["storage"]["mode"], "postgres")
+        self.assertTrue(payload["storage"]["persistent"])
+        self.assertTrue(payload["storage"]["shared_between_render_and_vm"])
+
+    async def test_health_reports_voice_unavailable_without_openai_client(self):
+        original_client = bot.openai_client
+        bot.openai_client = None
+        try:
+            payload = await bot.health()
+        finally:
+            bot.openai_client = original_client
+        self.assertFalse(payload["features"]["voice"])
+
+    def test_runtime_model_matches_configured_openrouter_model(self):
+        self.assertEqual(bot.get_user_model(339651126), bot.MINDMATE_OPENROUTER_CHAT_MODEL)
+
+    def test_regular_rate_limit_is_not_reported_as_quota_exhaustion(self):
+        class FakeRateLimitError(Exception):
+            status_code = 429
+            type = "rate_limit_error"
+            code = "rate_limit_exceeded"
+
+        self.assertFalse(bot.is_quota_exhausted_openai_error(FakeRateLimitError("slow down")))
+
+    async def test_model_command_reports_single_configured_provider_model(self):
+        reply_text = AsyncMock()
+        update = types.SimpleNamespace(
+            effective_user=types.SimpleNamespace(id=339651126),
+            message=types.SimpleNamespace(reply_text=reply_text),
+        )
+
+        await bot.cmd_model(update, types.SimpleNamespace(args=[]))
+
+        message = reply_text.await_args.args[0]
+        self.assertIn(bot.MINDMATE_OPENROUTER_CHAT_MODEL, message)
+        self.assertNotIn("A/B Testing Mode", message)
+
     async def test_personal_start_renders_bold_mode_label(self):
         reply_text = AsyncMock()
         update = types.SimpleNamespace(
