@@ -1169,8 +1169,6 @@ async def lifespan(app: FastAPI):
         telegram_runtime.add_handler(CommandHandler("context", cmd_context))
         telegram_runtime.add_handler(CommandHandler("remember", cmd_remember))
         telegram_runtime.add_handler(CommandHandler("forget", cmd_forget))
-        telegram_runtime.add_handler(CommandHandler("confirm", cmd_confirm))
-        telegram_runtime.add_handler(CommandHandler("decline", cmd_decline))
         telegram_runtime.add_handler(CommandHandler("journey", cmd_journey))
         telegram_runtime.add_handler(CommandHandler("journal", cmd_journal))
         telegram_runtime.add_handler(CommandHandler("import_journal", cmd_import_journal))
