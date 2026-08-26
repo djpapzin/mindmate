@@ -126,6 +126,14 @@ class PostgresDatabase:
                 )
             """)
 
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS mindmate_data_migrations (
+                    migration_name VARCHAR(100) PRIMARY KEY,
+                    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_user ON mindmate_messages(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_conv ON mindmate_messages(conversation_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_prefs_user ON mindmate_user_preferences(user_id)")
@@ -156,6 +164,69 @@ class PostgresDatabase:
                 VALUES (%s, %s, %s, %s, %s, %s)
             """, (message.user_id, conversation_id, message.role, message.content, message.message_id, message.timestamp))
             conn.commit()
+        finally:
+            pool.putconn(conn)
+
+    async def store_message_if_absent(self, message: Message) -> bool:
+        """Store a message idempotently for legacy recovery."""
+        pool = self._get_pool()
+        conn = pool.getconn()
+        cursor = conn.cursor()
+        try:
+            conversation_id = self._key(f"conversation:{message.user_id}")
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                (f"{message.user_id}:{message.message_id}",),
+            )
+            cursor.execute("""
+                INSERT INTO mindmate_messages (user_id, conversation_id, role, content, message_id, timestamp)
+                SELECT %s, %s, %s, %s, %s, %s
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM mindmate_messages
+                    WHERE user_id = %s AND message_id = %s
+                )
+            """, (
+                message.user_id, conversation_id, message.role, message.content,
+                message.message_id, message.timestamp, message.user_id, message.message_id,
+            ))
+            inserted = cursor.rowcount == 1
+            conn.commit()
+            return inserted
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            pool.putconn(conn)
+
+    async def is_legacy_migration_complete(self, migration_name: str) -> bool:
+        pool = self._get_pool()
+        conn = pool.getconn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT 1 FROM mindmate_data_migrations WHERE migration_name = %s",
+                (migration_name,),
+            )
+            return cursor.fetchone() is not None
+        finally:
+            pool.putconn(conn)
+
+    async def mark_legacy_migration_complete(self, migration_name: str, metadata: Dict[str, Any]) -> None:
+        pool = self._get_pool()
+        conn = pool.getconn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO mindmate_data_migrations (migration_name, metadata, completed_at)
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (migration_name) DO UPDATE SET
+                    metadata = EXCLUDED.metadata,
+                    completed_at = EXCLUDED.completed_at
+            """, (migration_name, Json(metadata)))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             pool.putconn(conn)
 
@@ -215,6 +286,26 @@ class PostgresDatabase:
                     updated_at = EXCLUDED.updated_at
             """, (user_id, key, json.dumps(value), datetime.now()))
             conn.commit()
+        finally:
+            pool.putconn(conn)
+
+    async def store_user_preference_if_absent(self, user_id: int, key: str, value: Any) -> bool:
+        """Recover a legacy preference without replacing newer PostgreSQL state."""
+        pool = self._get_pool()
+        conn = pool.getconn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO mindmate_user_preferences (user_id, pref_key, pref_value, updated_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (user_id, pref_key) DO NOTHING
+            """, (user_id, key, json.dumps(value), datetime.now()))
+            inserted = cursor.rowcount == 1
+            conn.commit()
+            return inserted
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             pool.putconn(conn)
 
