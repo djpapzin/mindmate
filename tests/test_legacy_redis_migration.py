@@ -45,8 +45,12 @@ class FakeDatabase:
         self.messages[key] = message
         return True
 
-    async def store_user_preference(self, user_id, key, value):
-        self.preferences[(user_id, key)] = value
+    async def store_user_preference_if_absent(self, user_id, key, value):
+        pref_key = (user_id, key)
+        if pref_key in self.preferences:
+            return False
+        self.preferences[pref_key] = value
+        return True
 
     async def mark_legacy_migration_complete(self, name, metadata):
         self.complete = True
@@ -71,7 +75,7 @@ class LegacyRedisMigrationTests(unittest.IsolatedAsyncioTestCase):
                 "conversation:42": [no_id, duplicate],
                 "archive:42": [duplicate],
             },
-            hashes={"user:42": {"mode": '"personal"', "enabled": "true"}},
+            hashes={"user:42": {"mode": '"personal"', "enabled": "False"}},
         )
         db = FakeDatabase()
 
@@ -81,7 +85,7 @@ class LegacyRedisMigrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(2, result["messages"])
         self.assertEqual(2, result["preferences"])
         self.assertEqual("personal", db.preferences[(42, "mode")])
-        self.assertIs(True, db.preferences[(42, "enabled")])
+        self.assertIs(False, db.preferences[(42, "enabled")])
         generated = [m for m in db.messages.values() if m.message_id.startswith("legacy-")]
         self.assertEqual(1, len(generated))
         self.assertIsInstance(generated[0].timestamp, datetime)
@@ -100,6 +104,17 @@ class LegacyRedisMigrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["already_complete"])
         self.assertIsNone(db.marker)
         self.assertFalse(db.complete)
+
+    async def test_existing_postgres_preference_wins_over_stale_redis(self):
+        redis = FakeRedis(hashes={"user:42": {"mode": '"legacy"'}})
+        db = FakeDatabase()
+        db.preferences[(42, "mode")] = "current"
+
+        result = await migrate_legacy_redis(db, "redis://unused", redis)
+
+        self.assertEqual("current", db.preferences[(42, "mode")])
+        self.assertEqual(0, result["preferences"])
+        self.assertTrue(db.complete)
 
     async def test_malformed_records_are_skipped_without_blocking_valid_data(self):
         valid = json.dumps({

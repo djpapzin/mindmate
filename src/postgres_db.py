@@ -136,7 +136,6 @@ class PostgresDatabase:
 
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_user ON mindmate_messages(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_conv ON mindmate_messages(conversation_id)")
-            cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_user_message_id ON mindmate_messages(user_id, message_id) WHERE message_id IS NOT NULL")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_prefs_user ON mindmate_user_preferences(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_feedback_user ON mindmate_feedback(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON mindmate_feedback(created_at)")
@@ -175,11 +174,21 @@ class PostgresDatabase:
         cursor = conn.cursor()
         try:
             conversation_id = self._key(f"conversation:{message.user_id}")
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                (f"{message.user_id}:{message.message_id}",),
+            )
             cursor.execute("""
                 INSERT INTO mindmate_messages (user_id, conversation_id, role, content, message_id, timestamp)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (user_id, message_id) WHERE message_id IS NOT NULL DO NOTHING
-            """, (message.user_id, conversation_id, message.role, message.content, message.message_id, message.timestamp))
+                SELECT %s, %s, %s, %s, %s, %s
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM mindmate_messages
+                    WHERE user_id = %s AND message_id = %s
+                )
+            """, (
+                message.user_id, conversation_id, message.role, message.content,
+                message.message_id, message.timestamp, message.user_id, message.message_id,
+            ))
             inserted = cursor.rowcount == 1
             conn.commit()
             return inserted
@@ -277,6 +286,26 @@ class PostgresDatabase:
                     updated_at = EXCLUDED.updated_at
             """, (user_id, key, json.dumps(value), datetime.now()))
             conn.commit()
+        finally:
+            pool.putconn(conn)
+
+    async def store_user_preference_if_absent(self, user_id: int, key: str, value: Any) -> bool:
+        """Recover a legacy preference without replacing newer PostgreSQL state."""
+        pool = self._get_pool()
+        conn = pool.getconn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO mindmate_user_preferences (user_id, pref_key, pref_value, updated_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (user_id, pref_key) DO NOTHING
+            """, (user_id, key, json.dumps(value), datetime.now()))
+            inserted = cursor.rowcount == 1
+            conn.commit()
+            return inserted
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             pool.putconn(conn)
 

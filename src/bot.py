@@ -1128,7 +1128,10 @@ async def lifespan(app: FastAPI):
         legacy_redis_url = os.environ.get("REDIS_URL")
         if legacy_redis_url:
             try:
-                await migrate_legacy_redis(db_manager, legacy_redis_url)
+                await asyncio.wait_for(
+                    migrate_legacy_redis(db_manager, legacy_redis_url),
+                    timeout=30,
+                )
             except Exception as migration_error:
                 logger.warning(
                     "[%s] Legacy Redis recovery failed without affecting PostgreSQL: %s",

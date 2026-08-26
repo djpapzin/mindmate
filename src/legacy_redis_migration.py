@@ -38,6 +38,20 @@ def _message_from_legacy(user_id: int, raw: str) -> Message | None:
     )
 
 
+def _parse_legacy_preference(raw_value: Any) -> Any:
+    """Preserve values written by RedisDatabase's json-or-str encoding."""
+    if raw_value == "True":
+        return True
+    if raw_value == "False":
+        return False
+    if raw_value == "None":
+        return None
+    try:
+        return json.loads(raw_value)
+    except (TypeError, json.JSONDecodeError):
+        return raw_value
+
+
 async def migrate_legacy_redis(db: Any, redis_url: str, redis_client: Any = None) -> dict[str, int | bool]:
     """Copy recoverable Redis conversations/preferences into PostgreSQL once.
 
@@ -50,9 +64,15 @@ async def migrate_legacy_redis(db: Any, redis_url: str, redis_client: Any = None
     owns_client = redis_client is None
     if redis_client is None:
         import redis.asyncio as redis
-        redis_client = redis.from_url(redis_url, decode_responses=True)
+        redis_client = redis.from_url(
+            redis_url,
+            decode_responses=True,
+            socket_connect_timeout=3,
+            socket_timeout=5,
+            health_check_interval=30,
+        )
 
-    messages = preferences = skipped = 0
+    messages = preferences = skipped = recoverable = 0
     try:
         await redis_client.ping()
         for pattern in ("conversation:*", "archive:*"):
@@ -68,6 +88,7 @@ async def migrate_legacy_redis(db: Any, redis_url: str, redis_client: Any = None
                     if message is None:
                         skipped += 1
                         continue
+                    recoverable += 1
                     if await db.store_message_if_absent(message):
                         messages += 1
 
@@ -78,14 +99,12 @@ async def migrate_legacy_redis(db: Any, redis_url: str, redis_client: Any = None
                 skipped += 1
                 continue
             for pref_key, raw_value in (await redis_client.hgetall(key)).items():
-                try:
-                    value = json.loads(raw_value)
-                except (TypeError, json.JSONDecodeError):
-                    value = raw_value
-                await db.store_user_preference(user_id, pref_key, value)
-                preferences += 1
+                recoverable += 1
+                value = _parse_legacy_preference(raw_value)
+                if await db.store_user_preference_if_absent(user_id, pref_key, value):
+                    preferences += 1
 
-        if messages == 0 and preferences == 0:
+        if recoverable == 0:
             logger.warning("Legacy Redis recovery found no recoverable records; leaving migration retryable")
             return {"already_complete": False, "messages": 0, "preferences": 0, "skipped": skipped}
 
