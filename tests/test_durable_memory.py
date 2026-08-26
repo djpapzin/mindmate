@@ -338,6 +338,21 @@ class TelegramCommandRegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Telegram startup failed; continuing without Telegram integration", warning_logger.call_args.args[0])
 
 
+    async def test_personal_start_renders_bold_mode_label(self):
+        reply_text = AsyncMock()
+        update = types.SimpleNamespace(
+            effective_user=types.SimpleNamespace(id=339651126),
+            message=types.SimpleNamespace(reply_text=reply_text),
+        )
+
+        await bot.cmd_start(update, types.SimpleNamespace())
+
+        reply_text.assert_awaited_once()
+        message = reply_text.await_args.args[0]
+        self.assertIn("<b>Personal Mode Active</b>", message)
+        self.assertEqual(reply_text.await_args.kwargs.get("parse_mode"), "HTML")
+
+
 class PostgresJournalDedupeTests(unittest.IsolatedAsyncioTestCase):
     async def test_append_journal_entry_uses_advisory_lock_and_reuses_existing_source_message(self):
         created_at = datetime(2026, 3, 24, 7, 10, 0)

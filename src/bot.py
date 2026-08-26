@@ -234,19 +234,25 @@ async def safe_start_telegram_app(telegram_app: Application, commands: list) -> 
         if not started:
             # Clean up any partially initialized PTB runtime before giving FastAPI the green light.
             try:
-                if telegram_app.updater and telegram_app.updater.running:
+                if telegram_app.updater and getattr(telegram_app.updater, "running", False):
                     await telegram_app.updater.stop()
             except Exception:
-                logger.debug("[%s] Ignoring updater stop error during failed Telegram startup", INSTANCE_ID, exc_info=True)
+                debug_log = getattr(logger, "debug", None)
+                if callable(debug_log):
+                    debug_log("[%s] Ignoring updater stop error during failed Telegram startup", INSTANCE_ID, exc_info=True)
             try:
                 if getattr(telegram_app, "running", False):
                     await telegram_app.stop()
             except Exception:
-                logger.debug("[%s] Ignoring app stop error during failed Telegram startup", INSTANCE_ID, exc_info=True)
+                debug_log = getattr(logger, "debug", None)
+                if callable(debug_log):
+                    debug_log("[%s] Ignoring app stop error during failed Telegram startup", INSTANCE_ID, exc_info=True)
             try:
                 await telegram_app.shutdown()
             except Exception:
-                logger.debug("[%s] Ignoring app shutdown error during failed Telegram startup", INSTANCE_ID, exc_info=True)
+                debug_log = getattr(logger, "debug", None)
+                if callable(debug_log):
+                    debug_log("[%s] Ignoring app shutdown error during failed Telegram startup", INSTANCE_ID, exc_info=True)
     return False
 
 # =============================================================================
@@ -1686,7 +1692,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.info(f"User {user_id} started bot [{'PERSONAL' if personal_mode else 'STANDARD'}]")
     
     if personal_mode:
-        await update.message.reply_text(
+        await send_markdown_message(
+            update,
             "👋 Welcome back!\n\n"
             "🔓 **Personal Mode Active**\n\n"
             "I'm here as your personal support companion — warm, direct, "
