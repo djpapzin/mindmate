@@ -76,8 +76,19 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=True)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
+MINDMATE_OPENROUTER_API_KEY = os.getenv("MINDMATE_OPENROUTER_API_KEY")
+MINDMATE_OPENROUTER_CHAT_MODEL = os.getenv("MINDMATE_OPENROUTER_CHAT_MODEL", "qwen/qwen3.7-plus")
+MODEL_COMMAND_DESCRIPTION = "🤖 View active AI model"
+MODE_COMMAND_DESCRIPTION = "🔓 View current mode"
+openai_client = None
+openrouter_client = (
+    OpenAI(
+        api_key=MINDMATE_OPENROUTER_API_KEY,
+        base_url="https://openrouter.ai/api/v1",
+    )
+    if MINDMATE_OPENROUTER_API_KEY
+    else None
+)
 PORT = int(os.getenv("PORT", 10000))
 MAX_HISTORY_LENGTH = 10
 AUTO_WEB_SEARCH_ENABLED = os.getenv("AUTO_WEB_SEARCH_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
@@ -457,7 +468,7 @@ HELP_MESSAGE = """**How I can support you:**
 • Send me a message about how you're feeling
 • Ask for journaling prompts or reflection questions
 • Learn about stress management
-• Share photos/documents - I'll analyze if relevant to your care
+• Photo and document analysis is temporarily unavailable
 
 **Commands:**
 /start - Start fresh conversation
@@ -468,8 +479,7 @@ HELP_MESSAGE = """**How I can support you:**
 /context - Share important info about your condition/meds (Personal Mode only)
 /remember - Remember important information easier than /context
 /forget - Forget specific information I've learned
-/confirm - Confirm saving of last uploaded file to memory
-/decline - Decline saving of last uploaded file
+
 /journey - Show your journey tracking and what I've learned about you
 /journal - Daily journaling and mood tracking
 /schedule - Manage your daily 07:00 SAST direct check-ins
@@ -491,7 +501,7 @@ db_manager: PostgresDatabase = None
 # In-memory fallback used only when PostgreSQL is unavailable at startup or runtime.
 conversation_history: dict[int, list[dict[str, str]]] = {}
 user_model_selection: dict[int, str] = {}  # Track model per user for A/B testing
-openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+openai_client = None
 bot_running = False
 degraded_mode_notice_sent: set[int] = set()
 
@@ -504,6 +514,16 @@ pending_context: dict[int, dict] = {}
 
 # User journey tracking for continuity of care
 user_journey: dict[int, dict] = {}
+
+
+def get_storage_mode() -> str:
+    """Return the active runtime storage mode for health/debugging."""
+    if db_manager and hasattr(db_manager, "storage_mode"):
+        try:
+            return db_manager.storage_mode()
+        except Exception as exc:
+            logger.warning(f"[{INSTANCE_ID}] Unable to determine storage mode: {exc}")
+    return "unknown"
 
 # Daily journaling and scheduling
 daily_journals: dict[int, dict[str, list[dict]]] = {}
@@ -541,15 +561,8 @@ VOICE_TTS_MODEL = "gpt-4o-mini-tts"
 
 
 def get_user_model(user_id: int) -> str:
-    """Get the model selected by user, or default."""
-    # Check if user has a specific model assigned (for Personal Mode users)
-    if user_id in PERSONAL_MODE_USERS:
-        assigned_model = PERSONAL_MODE_USERS[user_id].get("model")
-        if assigned_model:
-            return assigned_model
-    
-    # Fall back to user's selected model or default
-    return user_model_selection.get(user_id, DEFAULT_MODEL)
+    """Return the single model configured for the active OpenRouter deployment."""
+    return MINDMATE_OPENROUTER_CHAT_MODEL
 
 def set_user_model(user_id: int, model: str) -> None:
     """Set the model for a user."""
@@ -579,6 +592,54 @@ def build_chat_completion_kwargs(model: str, messages: list[dict], max_output_to
         })
 
     return kwargs
+
+
+def create_chat_completion(messages: list[dict], model: str, max_output_tokens: int):
+    """Create a chat completion via OpenRouter."""
+    if openrouter_client is None:
+        raise RuntimeError("OpenRouter is not configured")
+
+    response = openrouter_client.chat.completions.create(
+        **build_chat_completion_kwargs(model, messages, max_output_tokens)
+    )
+    logger.info(
+        "Chat completion successful via openrouter using %s",
+        model,
+    )
+    return response, "openrouter", model
+
+
+def is_quota_exhausted_openai_error(error: Exception) -> bool:
+    """Detect the specific quota exhaustion case so we can fall back more helpfully."""
+    status_code = getattr(error, "status_code", None)
+    error_code = str(getattr(error, "code", "") or "").lower()
+    message = str(error).lower()
+    return (
+        status_code == 429
+        and (
+            "insufficient_quota" in error_code
+            or "insufficient quota" in message
+            or "insufficient_quota" in message
+        )
+    )
+
+
+def build_quota_fallback_reply(message: str, used_web: bool = False) -> str:
+    """Give a small deterministic reply when the model is unavailable."""
+    normalized = (message or "").strip().lower()
+    if any(token in normalized for token in ("hello", "hi", "hey", "ping", "yo")):
+        reply = "💙 Hi — I’m here. What’s on your mind?"
+    elif len(normalized) <= 40:
+        reply = "💙 I’m here with you. Tell me a little more about what’s going on."
+    else:
+        reply = (
+            "💙 I’m having trouble generating a full reply right now, but I’m still here. "
+            "Send me the main part in one shorter message and I’ll respond as best I can."
+        )
+
+    if used_web:
+        reply += " If you want, resend it without `web:` and I’ll answer without live web lookup."
+    return reply
 
 
 def build_chat_recovery_message(error: Exception, used_web: bool = False) -> str:
@@ -1068,6 +1129,7 @@ async def lifespan(app: FastAPI):
         logger.info(f"[{INSTANCE_ID}] 🔄 Will use in-memory fallback storage")
         db_manager = PostgresInMemoryDatabase()
         await db_manager.connect()
+    logger.info(f"[{INSTANCE_ID}] Active storage mode: {get_storage_mode()}")
     
     # Initialize and start the Telegram bot
     logger.info(f"[{INSTANCE_ID}] Starting MindMate Bot...")
@@ -1084,10 +1146,10 @@ async def lifespan(app: FastAPI):
         commands = [
             BotCommand("start", "🚀 Start conversation"),
             BotCommand("help", "❓ Get help"),
-            BotCommand("mode", "🔓 Switch to Personal Mode"),
+            BotCommand("mode", MODE_COMMAND_DESCRIPTION),
             BotCommand("clear", "🧹 Clear history"),
             BotCommand("votd", "📖 Get today's Bible verse"),
-            BotCommand("model", "🧪 Switch AI model"),
+            BotCommand("model", MODEL_COMMAND_DESCRIPTION),
             BotCommand("summary", "📋 Show a quick memory summary"),
             BotCommand("mood", "📈 Log a mood check-in"),
             BotCommand("heartbeat", "🫀 Show heartbeat pulse"),
@@ -1107,8 +1169,6 @@ async def lifespan(app: FastAPI):
         telegram_runtime.add_handler(CommandHandler("context", cmd_context))
         telegram_runtime.add_handler(CommandHandler("remember", cmd_remember))
         telegram_runtime.add_handler(CommandHandler("forget", cmd_forget))
-        telegram_runtime.add_handler(CommandHandler("confirm", cmd_confirm))
-        telegram_runtime.add_handler(CommandHandler("decline", cmd_decline))
         telegram_runtime.add_handler(CommandHandler("journey", cmd_journey))
         telegram_runtime.add_handler(CommandHandler("journal", cmd_journal))
         telegram_runtime.add_handler(CommandHandler("import_journal", cmd_import_journal))
@@ -1178,6 +1238,7 @@ async def health():
 @fastapi_app.head("/health")
 async def health():
     """Enhanced health check for uptime monitoring"""
+    storage_mode = get_storage_mode()
     return {
         "status": "healthy",
         "service": "mindmate-bot",
@@ -1188,10 +1249,15 @@ async def health():
             "startup_status": telegram_startup_status,
             "enabled": telegram_app is not None,
         },
+        "storage": {
+            "mode": storage_mode,
+            "shared_between_render_and_vm": storage_mode == "postgres",
+            "persistent": storage_mode == "postgres",
+        },
         "uptime": "operational",
         "version": "1.2.0",
         "features": {
-            "voice": True,
+            "voice": openai_client is not None,
             "personal_mode": True,
             "crisis_detection": True,
             "webhook": USE_WEBHOOK
@@ -1753,14 +1819,12 @@ async def cmd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if personal_mode:
         user_info = PERSONAL_MODE_USERS[user_id]
         name = user_info.get("name", "Personal User")
-        assigned_model = user_info.get("model", "Auto-assigned")
         
         await send_markdown_message(update,
             f"👤 **Personal Mode Active**\n\n"
             f"**User:** {name}\n"
-            f"**Model:** `{current_model}`\n"
-            f"**Assignment:** {'Premium' if str(assigned_model).startswith('gpt-5') else 'Standard'}\n\n"
-            f"🎯 You have access to personalized context and premium model support."
+            f"**Model:** `{current_model}`\n\n"
+            f"🎯 You have access to personalized context and support."
         )
     else:
         await send_markdown_message(update,
@@ -1830,39 +1894,12 @@ async def cmd_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /model command for A/B testing."""
-    user_id = update.effective_user.id
-    args = context.args
-    
-    # Show current model if no args
-    if not args:
-        current = get_user_model(user_id)
-        models_list = "\n".join([f"• `{k}` → {v}" for k, v in AVAILABLE_MODELS.items()])
-        await send_markdown_message(update,
-            f"🧪 **A/B Testing Mode**\n\n"
-            f"**Current model:** `{current}`\n\n"
-            f"**Available models:**\n{models_list}\n\n"
-            f"**Usage:** `/model 5.4-mini`",
-        )
-        return
-    
-    # Set new model
-    model_key = args[0].lower()
-    if model_key in AVAILABLE_MODELS:
-        new_model = AVAILABLE_MODELS[model_key]
-        set_user_model(user_id, new_model)
-        await clear_history(user_id)  # Clear history when switching models
-        logger.info(f"User {user_id} switched to model: {new_model}")
-        await send_markdown_message(update,
-            f"✅ Switched to **{new_model}**\n\n"
-            f"History cleared for fresh comparison.\n"
-            f"Start chatting to test this model!",
-        )
-    else:
-        await send_markdown_message(update,
-            f"❌ Unknown model: `{model_key}`\n\n"
-            f"Available: {', '.join(AVAILABLE_MODELS.keys())}",
-        )
+    """Report the model configured for the active OpenRouter deployment."""
+    await send_markdown_message(
+        update,
+        f"🤖 **Active model:** `{MINDMATE_OPENROUTER_CHAT_MODEL}`\n\n"
+        "Model switching is not enabled on this deployment.",
+    )
 
 
 async def cmd_remember(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2407,7 +2444,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await send_markdown_message(update, CRISIS_RESPONSE)
             return
     
-    if not openai_client:
+    if not openrouter_client:
         await update.message.reply_text("I'm temporarily unavailable. Please try again later.")
         return
 
@@ -2434,12 +2471,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         messages.extend(history)
         messages.append({"role": "user", "content": message})
         
-        response = openai_client.chat.completions.create(
-            **build_chat_completion_kwargs(
-                model=current_model,
-                messages=messages,
-                max_output_tokens=600,
-            )
+        response, provider_name, provider_model = create_chat_completion(
+            messages=messages,
+            model=current_model,
+            max_output_tokens=600,
         )
         reply = response.choices[0].message.content
 
@@ -2455,9 +2490,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
     except OpenAIError as e:
         logger.error(f"OpenAI error: {e}")
-        await update.message.reply_text(
-            build_chat_recovery_message(e, used_web=used_web)
-        )
+        if is_quota_exhausted_openai_error(e):
+            await update.message.reply_text(
+                build_quota_fallback_reply(message or "", used_web=used_web)
+            )
+        else:
+            await update.message.reply_text(
+                build_chat_recovery_message(e, used_web=used_web)
+            )
     except Exception as e:
         logger.error(f"Error: {e}")
         await update.message.reply_text(
@@ -2709,135 +2749,21 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     personal_mode = is_personal_mode(user_id)
     
     try:
-        # Check OpenAI client availability
+        # Voice transcription/TTS currently requires OpenAI and is disabled in this deployment.
         if not openai_client:
-            logger.error(f"OpenAI client not initialized for user {user_id}")
+            logger.info(f"Voice handling disabled for user {user_id} because no OpenAI client is configured")
             await update.message.reply_text(
-                "❌ Voice service is temporarily unavailable. Please try again later.",
+                "🎙️ Voice messages are temporarily unavailable here. Please send text instead.",
             )
             return
-        
-        # Get voice file
-        voice = update.message.voice or update.message.audio
-        if not voice:
-            await update.message.reply_text("❌ Please send a voice message.")
-            return
-        
-        # Download voice file
-        voice_file = await context.bot.get_file(voice.file_id)
-        
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp_file:
-            await voice_file.download_to_drive(temp_file.name)
-            
-            # Transcribe voice to text
-            from openai import AsyncOpenAI
-            async_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-            
-            with open(temp_file.name, "rb") as audio_file:
-                transcript = await async_client.audio.transcriptions.create(
-                    model=VOICE_TRANSCRIPTION_MODEL,
-                    file=audio_file
-                )
-            
-            transcribed_text = transcript.text
-            logger.info(f"User {user_id} voice transcribed: {transcribed_text[:50]}...")
-            
-            # Add detailed logging for debugging
-            logger.info(f"OpenAI client status: {openai_client is not None}")
-            logger.info(f"Transcription successful: {transcribed_text[:100]}...")
-            
-            # Add transcription to history
-            await add_to_history(user_id, "user", transcribed_text)
-            
-            # Get conversation history
-            history = await get_history(user_id)
-            
-            # Generate response
-            current_model = get_user_model(user_id)
-            current_time = update.message.date.strftime("%I:%M %p on %B %d, %Y") if update.message and update.message.date else None
-            system_prompt = build_generation_system_prompt(
-                user_id,
-                personal_mode=personal_mode,
-                response_mode="voice",
-                current_time=current_time,
-            )
 
-            messages = [{"role": "system", "content": system_prompt}]
-            messages.extend(history)
-            messages.append({"role": "user", "content": transcribed_text})
-            
-            response = openai_client.chat.completions.create(
-                **build_chat_completion_kwargs(
-                    model=current_model,
-                    messages=messages,
-                    max_output_tokens=500,
-                )
-            )
-            
-            logger.info(f"Chat completion successful for user {user_id}")
-            
-            response_text = response.choices[0].message.content
-            logger.info(f"Response text extracted: {response_text[:100]}...")
-            
-            # Validate response before proceeding
-            if not response_text:
-                logger.error(f"Empty response from OpenAI for user {user_id}")
-                await update.message.reply_text(
-                    "❌ I didn't get a proper response. Please try again.",
-                )
-                return
-            
-            # Add response to history
-            await add_to_history(user_id, "assistant", response_text)
-            
-            # Generate voice response
-            logger.info(f"About to create TTS for user {user_id}")
-            voice_response = openai_client.audio.speech.create(
-                model=VOICE_TTS_MODEL,
-                input=response_text,
-                voice="alloy"
-            )
-            
-            logger.info(f"TTS creation successful for user {user_id}")
-            
-            # Validate voice response
-            if not voice_response:
-                logger.error(f"Failed to generate voice response for user {user_id}")
-                await update.message.reply_text(
-                    f"💬 **Text Response:**\n\n{response_text}",
-                )
-                return
-            
-            # Create temporary file for TTS response
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as voice_file:
-                # Run synchronous stream_to_file in executor to avoid blocking
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, voice_response.stream_to_file, voice_file.name)
-                
-                # Check if response fits in Telegram caption limit (800 chars leaves room for formatting)
-                if len(response_text) <= 800:
-                    # Normal flow - voice with full caption
-                    caption_text = f"🎤 **Voice Response:**\n\n{response_text}"
-                    await update.message.reply_voice(
-                        voice=voice_file,
-                        caption=caption_text,
-                    )
-                else:
-                    # Response too long - send voice + split text messages
-                    await update.message.reply_voice(
-                        voice=voice_file,
-                        caption="🎤 **Full response below:**",
-                    )
-                    
-                    # Split long text into multiple messages (Telegram limit: 4096 chars)
-                    for i in range(0, len(response_text), 4096):
-                        await update.message.reply_text(response_text[i:i+4096])
-            
-            logger.info(f"Voice response sent to user {user_id}")
-            
-    except OpenAIError as e:
-        logger.error(f"OpenAI error processing voice for user {user_id}: {e}")
+        await update.message.reply_text(
+            "🎙️ Voice messages are temporarily unavailable here. Please send text instead.",
+        )
+        return
+
+    except Exception as e:
+        logger.error(f"Voice handling error for user {user_id}: {e}")
         await update.message.reply_text(
             "❌ Voice processing failed. Please try again.",
         )
@@ -2845,67 +2771,19 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def handle_image_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle images and documents - analyze relevance and ask user confirmation."""
+    """Fail closed while image analysis is unavailable in this deployment."""
     user_id = update.effective_user.id
-    personal_mode = is_personal_mode(user_id)
-    
-    if not personal_mode:
-        await update.message.reply_text("I can only analyze files in Personal Mode.")
+
+    if not is_personal_mode(user_id):
+        await update.message.reply_text(
+            "🖼️ Image analysis is temporarily unavailable in this deployment."
+        )
         return
-    
-    try:
-        # Get file info
-        if update.message.photo:
-            # Handle photo
-            photo = update.message.photo[-1]  # Get highest resolution
-            file = await context.bot.get_file(photo.file_id)
-            file_info = f"Photo: {file.file_path}"
-            is_photo = True
-        else:
-            # Handle document image
-            document = update.message.document
-            file = await context.bot.get_file(document.file_id)
-            file_info = f"Document: {document.file_name}"
-            is_photo = False
-        
-        # Download file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg" if is_photo else ".pdf") as temp_file:
-            await file.download_to_drive(temp_file.name)
-            
-            # Analyze content for bipolar relevance
-            if is_photo:
-                relevance_result = await analyze_image_relevance(temp_file.name, openai_client)
-            else:
-                relevance_result = await analyze_document_relevance(temp_file.name, document.file_name)
-            
-            # Handle based on relevance
-            if relevance_result["is_relevant"]:
-                await update.message.reply_text(
-                    f"🏥 **Relevant content detected!**\n\n"
-                    f"{relevance_result['description']}\n\n"
-                    f"Should I remember this for future conversations about your bipolar management?"
-                )
-                # Store temporarily for user confirmation
-                store_pending_context(user_id, file_info, relevance_result["description"])
-            elif relevance_result["is_unsure"]:
-                await update.message.reply_text(
-                    f"🤔 **Not sure if this is relevant.**\n\n"
-                    f"{relevance_result['description']}\n\n"
-                    f"Should I remember this for your bipolar support?"
-                )
-                # Store temporarily for user confirmation
-                store_pending_context(user_id, file_info, relevance_result["description"])
-            else:
-                await update.message.reply_text(
-                    f"� **Nice photo!** This doesn't seem related to your bipolar management, so I won't save it to memory.\n\n"
-                    f"If you want me to remember something specific about it, just tell me!"
-                )
-            
-            logger.info(f"User {user_id} shared {file_info} - relevance: {relevance_result['is_relevant']}")
-            
-    except Exception as e:
-        logger.error(f"Error processing image/document for user {user_id}: {e}")
-        await update.message.reply_text("❌ I had trouble analyzing that file. Please try again.")
+
+    logger.info("Image analysis unavailable for user %s", user_id)
+    await update.message.reply_text(
+        "🖼️ Image analysis is temporarily unavailable in this deployment."
+    )
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3032,9 +2910,9 @@ def main():
     if not TELEGRAM_BOT_TOKEN:
         logger.error("❌ TELEGRAM_BOT_TOKEN not set!")
         return
-    if not OPENAI_API_KEY:
-        logger.warning("⚠️ OPENAI_API_KEY not set")
-    
+    if openrouter_client is None:
+        logger.warning("⚠️ MINDMATE_OPENROUTER_API_KEY not set; chat replies may fail")
+
     # Run FastAPI with Uvicorn
     uvicorn.run(
         fastapi_app,
