@@ -508,6 +508,23 @@ class TelegramCommandRegistrationTests(unittest.IsolatedAsyncioTestCase):
         context.bot.get_file.assert_not_awaited()
         self.assertIn("temporarily unavailable", reply_text.await_args.args[0].lower())
 
+    async def test_standard_mode_image_reply_does_not_imply_personal_mode_support(self):
+        reply_text = AsyncMock()
+        update = types.SimpleNamespace(
+            effective_user=types.SimpleNamespace(id=123),
+            message=types.SimpleNamespace(reply_text=reply_text),
+        )
+
+        await bot.handle_image_document(update, types.SimpleNamespace())
+
+        message = reply_text.await_args.args[0].lower()
+        self.assertIn("temporarily unavailable", message)
+        self.assertNotIn("only available in personal mode", message)
+
+    def test_help_omits_dead_upload_confirmation_commands(self):
+        self.assertNotIn("/confirm", bot.HELP_MESSAGE)
+        self.assertNotIn("/decline", bot.HELP_MESSAGE)
+
     async def test_personal_start_renders_bold_mode_label(self):
         reply_text = AsyncMock()
         update = types.SimpleNamespace(

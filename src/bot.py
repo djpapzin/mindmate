@@ -479,8 +479,7 @@ HELP_MESSAGE = """**How I can support you:**
 /context - Share important info about your condition/meds (Personal Mode only)
 /remember - Remember important information easier than /context
 /forget - Forget specific information I've learned
-/confirm - Confirm saving of last uploaded file to memory
-/decline - Decline saving of last uploaded file
+
 /journey - Show your journey tracking and what I've learned about you
 /journal - Daily journaling and mood tracking
 /schedule - Manage your daily 07:00 SAST direct check-ins
@@ -2778,7 +2777,9 @@ async def handle_image_document(update: Update, context: ContextTypes.DEFAULT_TY
     user_id = update.effective_user.id
 
     if not is_personal_mode(user_id):
-        await update.message.reply_text("Image analysis is only available in Personal Mode.")
+        await update.message.reply_text(
+            "🖼️ Image analysis is temporarily unavailable in this deployment."
+        )
         return
 
     logger.info("Image analysis unavailable for user %s", user_id)
