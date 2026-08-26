@@ -1,7 +1,7 @@
 # 🧠 MindMate - AI Mental Wellness Companion
 
 <p align="center">
-  <strong>A compassionate Telegram chatbot providing 24/7 mental wellness support powered by OpenAI</strong>
+  <strong>A compassionate Telegram chatbot providing 24/7 mental wellness support through OpenRouter</strong>
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 | 📝 **Persistent Memory** | PostgreSQL-powered cross-session conversation history |
 | 🔍 **Memory Search** | PostgreSQL keyword search over stored conversation text (not true vector semantic retrieval yet) |
 | 🔓 **Personal Mode** | Premium experience with direct advice (no disclaimers) |
-| �️ **Voice Messages** | Send voice notes → bot responds with voice ✅ **COMPLETED** |
+| 🎙️ **Voice Messages** | Temporarily unavailable in the current OpenRouter-only deployment |
 | ⚡ **FastAPI Backend** | Modern async architecture with webhooks |
 | 🛡️ **Graceful Fallback** | In-memory storage if PostgreSQL unavailable, with a user-facing lighter-memory notice |
 
@@ -35,7 +35,7 @@
 | `/help` | Show available commands |
 | `/mode` | Check your mode (Standard/Personal) |
 | `/votd` | Get today's Bible verse |
-| `/model` | Switch AI models for A/B testing |
+| `/model` | Show the active OpenRouter model |
 | `/feedback` | Save a quick product note for review |
 | `/schedule` | Manage daily direct check-ins (07:00 SAST by default) |
 | `/voice` | Choose voice personality (coming soon) |
@@ -73,15 +73,15 @@ A private, more direct AI support companion experience for authorized users.
 |-----------|------------|
 | **Framework** | FastAPI + Uvicorn |
 | **Bot Library** | python-telegram-bot 21.0 |
-| **AI** | OpenAI GPT-5.4 Mini |
-| **Voice** | Smart Caption Handling (gpt-4o-mini-transcribe + gpt-4o-mini-tts) |
+| **AI** | OpenRouter (model selected with `MINDMATE_OPENROUTER_CHAT_MODEL`) |
+| **Voice** | Disabled in the current OpenRouter-only deployment |
 | **Hosting** | Render (free tier) |
 | **Database** | PostgreSQL (Neon, persistent storage) |
 | **Uptime** | UptimeRobot |
 
 ### Architecture
 ```
-Telegram → Webhook → FastAPI → OpenAI → Response
+Telegram → Webhook → FastAPI → OpenRouter → Response
                  ↓
       PostgreSQL persistence (+ in-memory fallback)
 ```
@@ -170,11 +170,11 @@ Then in Telegram, open a DM with the bot as DJ Papzin and run:
 
 ---
 
-## 🧪 A/B Model Testing
+## 🧪 Offline Model Evaluation
 
 Automated testing to compare AI models via `research/run_blind_test.py`:
 
-**Models Available:** GPT-5.4 Mini, GPT-4o-mini, GPT-4.1-mini, GPT-5.2
+The production bot uses the single model configured by `MINDMATE_OPENROUTER_CHAT_MODEL`; `/model` reports it but does not switch models. The research script may compare separately configured models offline.
 
 The automated testing script runs comprehensive comparisons and generates performance reports.
 
@@ -201,7 +201,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed plans:
 - [x] Webhook Support
 - [x] A/B Testing Tools
 - [x] Persistent Memory (PostgreSQL)
-- [x] Voice Messages
+- [ ] Re-enable voice messages with a supported provider
 - [x] Daily Check-ins
 - [ ] WhatsApp Integration (Twilio)
 

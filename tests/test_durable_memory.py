@@ -467,6 +467,23 @@ class TelegramCommandRegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(bot.MINDMATE_OPENROUTER_CHAT_MODEL, message)
         self.assertNotIn("A/B Testing Mode", message)
 
+    async def test_mode_command_does_not_claim_premium_model_assignment(self):
+        reply_text = AsyncMock()
+        update = types.SimpleNamespace(
+            effective_user=types.SimpleNamespace(id=339651126),
+            message=types.SimpleNamespace(reply_text=reply_text),
+        )
+
+        await bot.cmd_mode(update, types.SimpleNamespace())
+
+        message = reply_text.await_args.args[0]
+        self.assertIn(bot.MINDMATE_OPENROUTER_CHAT_MODEL, message)
+        self.assertNotIn("Assignment:", message)
+        self.assertNotIn("premium model", message.lower())
+
+    def test_bot_command_describes_model_as_read_only(self):
+        self.assertNotIn("switch", bot.MODEL_COMMAND_DESCRIPTION.lower())
+
     async def test_personal_start_renders_bold_mode_label(self):
         reply_text = AsyncMock()
         update = types.SimpleNamespace(

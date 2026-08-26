@@ -78,6 +78,7 @@ load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=True)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 MINDMATE_OPENROUTER_API_KEY = os.getenv("MINDMATE_OPENROUTER_API_KEY")
 MINDMATE_OPENROUTER_CHAT_MODEL = os.getenv("MINDMATE_OPENROUTER_CHAT_MODEL", "qwen/qwen3.7-plus")
+MODEL_COMMAND_DESCRIPTION = "🤖 View active AI model"
 openai_client = None
 openrouter_client = (
     OpenAI(
@@ -1148,7 +1149,7 @@ async def lifespan(app: FastAPI):
             BotCommand("mode", "🔓 Switch to Personal Mode"),
             BotCommand("clear", "🧹 Clear history"),
             BotCommand("votd", "📖 Get today's Bible verse"),
-            BotCommand("model", "🧪 Switch AI model"),
+            BotCommand("model", MODEL_COMMAND_DESCRIPTION),
             BotCommand("summary", "📋 Show a quick memory summary"),
             BotCommand("mood", "📈 Log a mood check-in"),
             BotCommand("heartbeat", "🫀 Show heartbeat pulse"),
@@ -1820,14 +1821,12 @@ async def cmd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if personal_mode:
         user_info = PERSONAL_MODE_USERS[user_id]
         name = user_info.get("name", "Personal User")
-        assigned_model = user_info.get("model", "Auto-assigned")
         
         await send_markdown_message(update,
             f"👤 **Personal Mode Active**\n\n"
             f"**User:** {name}\n"
-            f"**Model:** `{current_model}`\n"
-            f"**Assignment:** {'Premium' if str(assigned_model).startswith('gpt-5') else 'Standard'}\n\n"
-            f"🎯 You have access to personalized context and premium model support."
+            f"**Model:** `{current_model}`\n\n"
+            f"🎯 You have access to personalized context and support."
         )
     else:
         await send_markdown_message(update,
