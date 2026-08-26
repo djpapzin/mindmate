@@ -491,6 +491,23 @@ class TelegramCommandRegistrationTests(unittest.IsolatedAsyncioTestCase):
     def test_bot_command_describes_model_as_read_only(self):
         self.assertNotIn("switch", bot.MODEL_COMMAND_DESCRIPTION.lower())
 
+    async def test_image_document_handler_fails_closed_before_download(self):
+        reply_text = AsyncMock()
+        update = types.SimpleNamespace(
+            effective_user=types.SimpleNamespace(id=339651126),
+            message=types.SimpleNamespace(
+                photo=[],
+                document=types.SimpleNamespace(file_id="file-1", file_name="scan.jpg"),
+                reply_text=reply_text,
+            ),
+        )
+        context = types.SimpleNamespace(bot=types.SimpleNamespace(get_file=AsyncMock()))
+
+        await bot.handle_image_document(update, context)
+
+        context.bot.get_file.assert_not_awaited()
+        self.assertIn("temporarily unavailable", reply_text.await_args.args[0].lower())
+
     async def test_personal_start_renders_bold_mode_label(self):
         reply_text = AsyncMock()
         update = types.SimpleNamespace(

@@ -2774,70 +2774,17 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def handle_image_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle images and documents - analyze relevance and ask user confirmation."""
+    """Fail closed while image analysis is unavailable in this deployment."""
     user_id = update.effective_user.id
-    personal_mode = is_personal_mode(user_id)
-    
-    if not personal_mode:
-        await update.message.reply_text("I can only analyze files in Personal Mode.")
+
+    if not is_personal_mode(user_id):
+        await update.message.reply_text("Image analysis is only available in Personal Mode.")
         return
-    
-    try:
-        # Get file info
-        if update.message.photo:
-            # Handle photo
-            photo = update.message.photo[-1]  # Get highest resolution
-            file = await context.bot.get_file(photo.file_id)
-            file_info = f"Photo: {file.file_path}"
-            is_photo = True
-        else:
-            # Handle document image
-            document = update.message.document
-            file = await context.bot.get_file(document.file_id)
-            file_info = f"Document: {document.file_name}"
-            is_photo = False
-        
-        # Download file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg" if is_photo else ".pdf") as temp_file:
-            await file.download_to_drive(temp_file.name)
-            
-            # Analyze content for bipolar relevance
-            if is_photo:
-                await update.message.reply_text(
-                    "🖼️ Image analysis is temporarily unavailable in this no-OpenAI deployment."
-                )
-                return
-            else:
-                relevance_result = await analyze_document_relevance(temp_file.name, document.file_name)
-            
-            # Handle based on relevance
-            if relevance_result["is_relevant"]:
-                await update.message.reply_text(
-                    f"🏥 **Relevant content detected!**\n\n"
-                    f"{relevance_result['description']}\n\n"
-                    f"Should I remember this for future conversations about your bipolar management?"
-                )
-                # Store temporarily for user confirmation
-                store_pending_context(user_id, file_info, relevance_result["description"])
-            elif relevance_result["is_unsure"]:
-                await update.message.reply_text(
-                    f"🤔 **Not sure if this is relevant.**\n\n"
-                    f"{relevance_result['description']}\n\n"
-                    f"Should I remember this for your bipolar support?"
-                )
-                # Store temporarily for user confirmation
-                store_pending_context(user_id, file_info, relevance_result["description"])
-            else:
-                await update.message.reply_text(
-                    f"� **Nice photo!** This doesn't seem related to your bipolar management, so I won't save it to memory.\n\n"
-                    f"If you want me to remember something specific about it, just tell me!"
-                )
-            
-            logger.info(f"User {user_id} shared {file_info} - relevance: {relevance_result['is_relevant']}")
-            
-    except Exception as e:
-        logger.error(f"Error processing image/document for user {user_id}: {e}")
-        await update.message.reply_text("❌ I had trouble analyzing that file. Please try again.")
+
+    logger.info("Image analysis unavailable for user %s", user_id)
+    await update.message.reply_text(
+        "🖼️ Image analysis is temporarily unavailable in this deployment."
+    )
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
