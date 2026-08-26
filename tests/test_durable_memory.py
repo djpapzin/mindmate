@@ -481,6 +481,13 @@ class TelegramCommandRegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Assignment:", message)
         self.assertNotIn("premium model", message.lower())
 
+    def test_help_does_not_claim_unavailable_media_analysis(self):
+        self.assertNotIn("analyze", bot.HELP_MESSAGE.lower())
+        self.assertIn("temporarily unavailable", bot.HELP_MESSAGE.lower())
+
+    def test_bot_command_describes_mode_as_read_only(self):
+        self.assertNotIn("switch", bot.MODE_COMMAND_DESCRIPTION.lower())
+
     def test_bot_command_describes_model_as_read_only(self):
         self.assertNotIn("switch", bot.MODEL_COMMAND_DESCRIPTION.lower())
 

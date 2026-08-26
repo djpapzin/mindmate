@@ -79,6 +79,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 MINDMATE_OPENROUTER_API_KEY = os.getenv("MINDMATE_OPENROUTER_API_KEY")
 MINDMATE_OPENROUTER_CHAT_MODEL = os.getenv("MINDMATE_OPENROUTER_CHAT_MODEL", "qwen/qwen3.7-plus")
 MODEL_COMMAND_DESCRIPTION = "🤖 View active AI model"
+MODE_COMMAND_DESCRIPTION = "🔓 View current mode"
 openai_client = None
 openrouter_client = (
     OpenAI(
@@ -467,7 +468,7 @@ HELP_MESSAGE = """**How I can support you:**
 • Send me a message about how you're feeling
 • Ask for journaling prompts or reflection questions
 • Learn about stress management
-• Share photos/documents - I'll analyze if relevant to your care
+• Photo and document analysis is temporarily unavailable
 
 **Commands:**
 /start - Start fresh conversation
@@ -1146,7 +1147,7 @@ async def lifespan(app: FastAPI):
         commands = [
             BotCommand("start", "🚀 Start conversation"),
             BotCommand("help", "❓ Get help"),
-            BotCommand("mode", "🔓 Switch to Personal Mode"),
+            BotCommand("mode", MODE_COMMAND_DESCRIPTION),
             BotCommand("clear", "🧹 Clear history"),
             BotCommand("votd", "📖 Get today's Bible verse"),
             BotCommand("model", MODEL_COMMAND_DESCRIPTION),
