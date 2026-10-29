@@ -1,16 +1,20 @@
 [Unit]
-Description=MindMate Telegram bot
+Description=MindMate Telegram bot (local polling)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/ubuntu/.openclaw/workspace-papzin-lead/projects/mindmate
-EnvironmentFile=/home/ubuntu/.openclaw/workspace-papzin-lead/.env
-EnvironmentFile=/home/ubuntu/.openclaw/workspace-papzin-lead/projects/mindmate/.env
+# Adjust WorkingDirectory to your checkout, then:
+#   cp .env.example .env   # or: python scripts/pull_render_env.py
+#   python -m venv .venv && .venv/bin/pip install -r requirements.txt
+WorkingDirectory=/workspace
+EnvironmentFile=-/workspace/.env
 Environment=PYTHONUNBUFFERED=1
 Environment=PORT=10000
-ExecStart=/home/ubuntu/.openclaw/workspace-papzin-lead/projects/mindmate/venv/bin/python /home/ubuntu/.openclaw/workspace-papzin-lead/projects/mindmate/bot.py
+# Unset webhook URL so the bot uses Telegram polling (required when Render is down).
+UnsetEnvironment=RENDER_EXTERNAL_URL
+ExecStart=/workspace/.venv/bin/python /workspace/bot.py
 Restart=always
 RestartSec=5
 TimeoutStopSec=30

@@ -129,6 +129,8 @@ git clone https://github.com/djpapzin/mindmate.git
 cd mindmate
 
 # Install dependencies
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 # Setup environment
@@ -136,8 +138,36 @@ cp .env.example .env
 # Edit .env with your tokens
 
 # Run the bot (polling mode - no RENDER_EXTERNAL_URL)
-python bot.py
+bash scripts/run_local.sh
+# or: python bot.py
 ```
+
+### When Render free hours are exhausted
+
+Render suspends free workers after the monthly hour cap (both `mindmate` and `mindmate-dev`).
+They stay down until the next calendar month reset unless you upgrade the service.
+
+Until then, run MindMate in **polling mode** on any always-on machine (this Cloud Agent VM, your Windows PC, or a VPS with `deploy/systemd/mindmate.service`):
+
+1. Put secrets in `.env` (never commit it), **or** pull them from Render:
+   ```bash
+   export RENDER_API_KEY=rnd_...
+   pip install requests
+   python scripts/pull_render_env.py
+   ```
+   The exporter selects the first service with both required secrets and takes all
+   settings from that service alone. It never combines production and staging.
+   Pin the intended environment with `--service-id <render-service-id>`; repeated
+   IDs are ordered fallbacks. If none is usable, the existing `.env` is preserved.
+2. Leave `RENDER_EXTERNAL_URL` unset so Telegram polling is used (not a dead webhook).
+3. Start:
+   ```bash
+   bash scripts/run_local.sh
+   ```
+4. Confirm `GET http://127.0.0.1:10000/health` shows `"mode": "polling"` and Telegram `startup_status: running`.
+
+Required secrets: `TELEGRAM_BOT_TOKEN`, `MINDMATE_OPENROUTER_API_KEY`.  
+Optional for durable memory: `NEON_MINDMATE_DB_URL` or `DATABASE_URL` (otherwise in-memory fallback).
 
 ### Environment Variables
 ```env
