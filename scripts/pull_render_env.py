@@ -42,13 +42,17 @@ KEEP_KEYS = {
     "REDIS_URL",
 }
 
+# Both are required for a usable bot; database and heartbeat settings are optional.
+REQUIRED_KEYS = ("TELEGRAM_BOT_TOKEN", "MINDMATE_OPENROUTER_API_KEY")
+
 
 def fetch_env_vars(api_key: str, service_id: str) -> dict[str, str]:
     headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
     url = f"https://api.render.com/v1/services/{service_id}/env-vars"
     resp = requests.get(url, headers=headers, timeout=30)
     if resp.status_code != 200:
-        raise RuntimeError(f"{service_id}: HTTP {resp.status_code} — {resp.text[:300]}")
+        # Render error bodies may contain sensitive configuration.
+        raise RuntimeError(f"{service_id}: HTTP {resp.status_code}")
 
     payload = resp.json()
     # Render returns either a bare list or objects with {"envVar": {...}}
@@ -87,7 +91,8 @@ def main() -> int:
         "--service-id",
         action="append",
         dest="service_ids",
-        help="Render service id (repeatable). Default: mindmate then mindmate-dev.",
+        help="Render service id (repeatable, ordered fallbacks; never merged). "
+        "Default: mindmate then mindmate-dev. Specify one id to pin an environment.",
     )
     parser.add_argument(
         "--out",
@@ -103,29 +108,28 @@ def main() -> int:
         return 1
 
     service_ids = args.service_ids or list(DEFAULT_SERVICE_IDS)
-    merged: dict[str, str] = {}
-    errors: list[str] = []
-
     for service_id in service_ids:
         try:
             fetched = fetch_env_vars(api_key, service_id)
-            # Prefer first successful service for overlapping keys; later fills gaps.
-            for key, value in fetched.items():
-                merged.setdefault(key, value)
-            print(f"OK {service_id}: {len(fetched)} kept keys")
-        except Exception as exc:  # noqa: BLE001 — surface any Render failure clearly
-            errors.append(str(exc))
-            print(f"SKIP {service_id}: {exc}", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001 — try the next complete configuration
+            # Do not expose response bodies, request headers, or exception secrets.
+            print(f"SKIP {service_id}: fetch failed ({type(exc).__name__})", file=sys.stderr)
+            continue
 
-    if not merged.get("TELEGRAM_BOT_TOKEN"):
-        print("Could not obtain TELEGRAM_BOT_TOKEN from Render.", file=sys.stderr)
-        for err in errors:
-            print(f"  - {err}", file=sys.stderr)
-        return 1
+        missing = [key for key in REQUIRED_KEYS if not fetched.get(key, "").strip()]
+        if missing:
+            print(f"SKIP {service_id}: missing {', '.join(missing)}", file=sys.stderr)
+            continue
 
-    write_env(args.out, merged)
-    print(f"Wrote {args.out} ({len(merged)} keys). Start with: bash scripts/run_local.sh")
-    return 0
+        # Select the entire first usable service, including only its optional keys.
+        # Never fill gaps from another service, the old .env, or the process env.
+        write_env(args.out, fetched)
+        print(f"Wrote {args.out} from {service_id} ({len(fetched)} keys). "
+              "Start with: bash scripts/run_local.sh")
+        return 0
+
+    print("No service supplied a complete configuration; output left unchanged.", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":

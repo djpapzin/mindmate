@@ -155,6 +155,10 @@ Until then, run MindMate in **polling mode** on any always-on machine (this Clou
    pip install requests
    python scripts/pull_render_env.py
    ```
+   The exporter selects the first service with both required secrets and takes all
+   settings from that service alone. It never combines production and staging.
+   Pin the intended environment with `--service-id <render-service-id>`; repeated
+   IDs are ordered fallbacks. If none is usable, the existing `.env` is preserved.
 2. Leave `RENDER_EXTERNAL_URL` unset so Telegram polling is used (not a dead webhook).
 3. Start:
    ```bash
